@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 56;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -11,7 +11,6 @@
 		025CD9B6B06E602DC329D42C /* InstrumentComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30229EF73E88E1F5D2955BD4 /* InstrumentComponents.swift */; };
 		09703256FDD1704BEF12227A /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DADB527D048F6F77F54B4FC /* WeatherService.swift */; };
 		0B769E5CCD236E2FD2754E0C /* DetectionOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED887A859F3DBD42F7AC0D8 /* DetectionOverlayView.swift */; };
-		0E483737B5C8132BE7D829EB /* HealthComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8216562B8362267A48A081F /* HealthComponents.swift */; };
 		0FD1ABDF8C5C8FB0DDABAFDC /* StillsGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64752CED0EF478039BD8B966 /* StillsGalleryView.swift */; };
 		12396442342FC84EBE2CEC9F /* MJPEGStreamView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02802BCA4A9B7028BDECAFA2 /* MJPEGStreamView.swift */; };
 		1377BE1B090F93106BDBD80B /* NotesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5346A9DCD00C4F0288365EB9 /* NotesStore.swift */; };
@@ -35,7 +34,6 @@
 		56C4CE0164D10A6FB7644011 /* StillsGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64752CED0EF478039BD8B966 /* StillsGalleryView.swift */; };
 		57887BD79F3218569F012E1E /* MJPEGPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13351969060BDB832C822966 /* MJPEGPlayer.swift */; };
 		57FB7B591803FA0671F640C2 /* DataTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23CBB50F965A345E7E43622E /* DataTabView.swift */; };
-		58CD05DB30500A7AF3E746F0 /* HealthComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8216562B8362267A48A081F /* HealthComponents.swift */; };
 		5EB31641EA1BB80BD230CD9A /* Note.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F35CE6A665F04BE288D4A5 /* Note.swift */; };
 		66F028D9DE8A4A551ABE2BCE /* AILogEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED57279F1CC400BE3932C443 /* AILogEntry.swift */; };
 		69EB65AED88A251297C72452 /* SettingsTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A791025D6244CC68CB44D96 /* SettingsTabView.swift */; };
@@ -92,7 +90,6 @@
 		9DADB527D048F6F77F54B4FC /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
 		A4AE95CC2CE2A37EAFF9BD93 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A9F35CE6A665F04BE288D4A5 /* Note.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Note.swift; sourceTree = "<group>"; };
-		B8216562B8362267A48A081F /* HealthComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthComponents.swift; sourceTree = "<group>"; };
 		C61AC55578881349629013CD /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		D06F605948CFA8F4FA89149E /* HHRCS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HHRCS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DBD4BD10641E042B18F212F9 /* HHRCS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HHRCS.entitlements; sourceTree = "<group>"; };
@@ -158,7 +155,6 @@
 				E5705655DABA81BA23F8897D /* CapturedStill.swift */,
 				23CBB50F965A345E7E43622E /* DataTabView.swift */,
 				3658BB8E2148B3E25884427E /* DataViewModel.swift */,
-				B8216562B8362267A48A081F /* HealthComponents.swift */,
 				30229EF73E88E1F5D2955BD4 /* InstrumentComponents.swift */,
 				9DADB527D048F6F77F54B4FC /* WeatherService.swift */,
 			);
@@ -347,7 +343,6 @@
 				A7B478A77E6A16795FFF758C /* DeviceOrientationObserver.swift in Sources */,
 				71DBF700EA4457E1605CB31E /* FieldAgentView.swift in Sources */,
 				30D93125551B190FF2A5648E /* HHRCSApp.swift in Sources */,
-				58CD05DB30500A7AF3E746F0 /* HealthComponents.swift in Sources */,
 				025CD9B6B06E602DC329D42C /* InstrumentComponents.swift in Sources */,
 				57887BD79F3218569F012E1E /* MJPEGPlayer.swift in Sources */,
 				47E41F66652A6EA6B444C6D8 /* MJPEGStreamView.swift in Sources */,
@@ -382,7 +377,6 @@
 				B36554BB1B23F45A1820AD2C /* DeviceOrientationObserver.swift in Sources */,
 				6D9B19FEE950B2181A61D039 /* FieldAgentView.swift in Sources */,
 				16C1EE04F5DE0BCC3B4ECC39 /* HHRCSApp.swift in Sources */,
-				0E483737B5C8132BE7D829EB /* HealthComponents.swift in Sources */,
 				FF42740CED83F3E35FAC11B1 /* InstrumentComponents.swift in Sources */,
 				C6EB650A8286EA628B5D4322 /* MJPEGPlayer.swift in Sources */,
 				12396442342FC84EBE2CEC9F /* MJPEGStreamView.swift in Sources */,
