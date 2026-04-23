@@ -45,10 +45,7 @@ final class DetectionSimulator: ObservableObject {
 }
 
 struct DetectionOverlayView: View {
-    @EnvironmentObject var vm: DataViewModel
-    @ObservedObject private var settings = AppSettings.shared
     @StateObject private var sim = DetectionSimulator()
-    @State private var showYoloPopover = false
 
     var body: some View {
         ZStack {
@@ -76,117 +73,6 @@ struct DetectionOverlayView: View {
                         .position(x: r.midX, y: r.minY - 8)
                 }
             }
-
-            // YOLO badge (tappable)
-            VStack {
-                HStack {
-                    Button { showYoloPopover = true } label: {
-                        Text("YOLOv8  SIM")
-                            .font(.system(size: 8, weight: .medium, design: .monospaced))
-                            .tracking(1.5)
-                            .foregroundStyle(Theme.accent.opacity(0.9))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Theme.background.opacity(0.7))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 2)
-                                    .stroke(Theme.accent.opacity(0.4), lineWidth: Theme.ruleWidth)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showYoloPopover) {
-                        YoloInfoPopover(simulationMode: settings.simulationMode)
-                            .presentationCompactAdaptation(.popover)
-                    }
-                    .padding(12)
-                    Spacer()
-                }
-                Spacer()
-            }
-
-            // Trigger HUD at bottom
-            VStack {
-                Spacer()
-                triggerHUD
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 60)
-            }
-        }
-    }
-
-    // MARK: – Trigger HUD
-
-    private var triggerHUD: some View {
-        HStack(spacing: 8) {
-            // State pill
-            HStack(spacing: 4) {
-                if vm.triggerState == .active {
-                    Circle()
-                        .fill(Theme.accent)
-                        .frame(width: 5, height: 5)
-                }
-                Text(vm.triggerStateLabel)
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .tracking(1.5)
-                    .foregroundStyle(vm.triggerStateColor)
-            }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(Theme.background.opacity(0.75))
-            .overlay(
-                RoundedRectangle(cornerRadius: 2)
-                    .stroke(vm.triggerStateColor.opacity(0.5), lineWidth: Theme.ruleWidth)
-            )
-
-            Text(vm.lastDetectionClass.uppercased())
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .tracking(1.5)
-                .foregroundStyle(.white.opacity(0.8))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .background(Theme.background.opacity(0.6))
-
-            Text(vm.lastDetectionTimeString)
-                .font(.system(size: 9, weight: .regular, design: .monospaced))
-                .foregroundStyle(Theme.tertiary)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .background(Theme.background.opacity(0.6))
-
-            Spacer()
-        }
-    }
-}
-
-// MARK: – YOLO info popover
-
-private struct YoloInfoPopover: View {
-    let simulationMode: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            infoRow(label: "MODEL", value: "YOLOv8 Nano")
-            HRule()
-            infoRow(label: "MODE", value: simulationMode ? "SIM" : "LIVE")
-            HRule()
-            infoRow(label: "DET FPS", value: "4.0")
-            HRule()
-            infoRow(label: "THRESHOLD", value: "0.72")
-        }
-        .padding(14)
-        .background(Theme.cardBackground)
-        .frame(width: 200)
-    }
-
-    private func infoRow(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label)
-                .font(Theme.dataLabel(size: 9))
-                .tracking(Theme.labelTracking)
-                .foregroundStyle(Theme.tertiary)
-            Text(value)
-                .font(.system(size: 11, weight: .regular, design: .monospaced))
-                .foregroundStyle(.white)
         }
     }
 }
