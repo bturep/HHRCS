@@ -6,6 +6,7 @@ struct DataTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                systemHealthRow
                 enclosureSection
                 weatherSection
                 astroSection
@@ -19,6 +20,87 @@ struct DataTabView: View {
             await vm.refreshWeather()
             await vm.refreshAstro()
         }
+    }
+
+    // MARK: – System health row
+
+    private var systemHealthRow: some View {
+        SectionCard(title: "SYSTEM") {
+            HStack(spacing: 0) {
+                HealthDot(
+                    label:       "PI",
+                    status:      vm.healthPiReachable ? .green : .red,
+                    detailTitle: "RASPBERRY PI",
+                    detailState: vm.healthPiReachable ? "Reachable" : "Unreachable",
+                    lastSeen:    vm.healthLastPollAt,
+                    error:       vm.healthPiReachable ? nil : vm.healthLastError
+                )
+                HealthDot(
+                    label:       "BRIDGE",
+                    status:      vm.healthBridgeReachable ? .green : .red,
+                    detailTitle: "ESP32 BRIDGE",
+                    detailState: vm.healthBridgeReachable ? "Reachable — port 5002" : "Unreachable",
+                    lastSeen:    vm.healthLastPollAt,
+                    error:       nil
+                )
+                HealthDot(
+                    label:       "BLE",
+                    status:      vm.healthBleConnected ? .green : .red,
+                    detailTitle: "BLE — BMPCC 6K PRO",
+                    detailState: vm.healthBleConnected ? "Connected" : "Disconnected",
+                    lastSeen:    vm.healthLastPollAt,
+                    error:       nil
+                )
+                HealthDot(
+                    label:       "YOLO",
+                    status:      yoloStatus,
+                    detailTitle: "YOLOv8 DETECTOR",
+                    detailState: yoloDetailState,
+                    lastSeen:    vm.healthLastPollAt,
+                    error:       nil
+                )
+                HealthDot(
+                    label:       "REC",
+                    status:      vm.healthIsRecording ? .green : .grey,
+                    detailTitle: "RECORDING STATE",
+                    detailState: vm.healthIsRecording ? "Recording" : "Idle",
+                    lastSeen:    vm.healthLastPollAt,
+                    error:       nil
+                )
+                HealthDot(
+                    label:       "SSD",
+                    status:      ssdStatus,
+                    detailTitle: "SSD STORAGE",
+                    detailState: ssdDetailState,
+                    lastSeen:    vm.healthLastPollAt,
+                    error:       nil
+                )
+            }
+        }
+    }
+
+    private var yoloStatus: HealthStatus {
+        guard vm.healthPiReachable else { return .grey }
+        if !vm.healthYoloRunning { return .red }
+        return vm.healthYoloSimMode ? .yellow : .green
+    }
+
+    private var yoloDetailState: String {
+        if !vm.healthPiReachable { return "Pi unreachable" }
+        if !vm.healthYoloRunning { return "Not running" }
+        return vm.healthYoloSimMode ? "Running — simulation mode" : "Running — live inference"
+    }
+
+    private var ssdStatus: HealthStatus {
+        guard vm.healthSsdMounted else { return .red }
+        if vm.healthSsdFreePct < 5  { return .red }
+        if vm.healthSsdFreePct < 10 { return .yellow }
+        return .green
+    }
+
+    private var ssdDetailState: String {
+        if !vm.healthSsdMounted { return "Not mounted" }
+        return String(format: "Mounted — %.1f%% free", vm.healthSsdFreePct)
     }
 
     // MARK: – Enclosure (two rows of 3)

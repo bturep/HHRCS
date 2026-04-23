@@ -67,9 +67,22 @@ final class DataViewModel: ObservableObject {
     @Published var astro:        AstroData?
     @Published var astroError:   String?
 
+    // MARK: – System health (polled from Pi /status every 5s)
+    @Published var healthPiReachable:     Bool    = false
+    @Published var healthBridgeReachable: Bool    = false
+    @Published var healthBleConnected:    Bool    = false
+    @Published var healthYoloRunning:     Bool    = false
+    @Published var healthYoloSimMode:     Bool    = true
+    @Published var healthIsRecording:     Bool    = false
+    @Published var healthSsdMounted:      Bool    = false
+    @Published var healthSsdFreePct:      Double  = 0
+    @Published var healthLastPollAt:      Date?   = nil
+    @Published var healthLastError:       String? = nil
+
     // MARK: – Private
     private var simTask:     Task<Void, Never>?
     private var trigTask:    Task<Void, Never>?
+    private var healthTask:  Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
 
     private let detectionClasses = ["deer", "fox", "raccoon", "coyote",
@@ -90,6 +103,7 @@ final class DataViewModel: ObservableObject {
         stills = CapturedStill.simulatedEntries()
         Task { await refreshWeather() }
         Task { await refreshAstro() }
+        startHealthPolling()
 
         AppSettings.shared.$latitude
             .combineLatest(AppSettings.shared.$longitude)
@@ -106,6 +120,7 @@ final class DataViewModel: ObservableObject {
     deinit {
         simTask?.cancel()
         trigTask?.cancel()
+        healthTask?.cancel()
     }
 
     func refreshWeather() async {
@@ -125,6 +140,65 @@ final class DataViewModel: ObservableObject {
             astro = try await AstroService.fetch(latitude: s.latitude, longitude: s.longitude)
         } catch {
             astroError = error.localizedDescription
+        }
+    }
+
+    // MARK: – Health polling (every 5s, real Pi regardless of sim mode)
+
+    private struct HealthPoll: Decodable {
+        let esp32Connected:      Bool?
+        let esp32BridgeReachable: Bool?
+        let yoloRunning:         Bool?
+        let yoloSimMode:         Bool?
+        let ssdMounted:          Bool?
+        let ssdFreePct:          Double?
+        let recording:           Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case esp32Connected       = "esp32_connected"
+            case esp32BridgeReachable = "esp32_bridge_reachable"
+            case yoloRunning          = "yolo_running"
+            case yoloSimMode          = "yolo_sim_mode"
+            case ssdMounted           = "ssd_mounted"
+            case ssdFreePct           = "ssd_free_pct"
+            case recording
+        }
+    }
+
+    private func startHealthPolling() {
+        healthTask = Task {
+            while !Task.isCancelled {
+                await pollHealth()
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+        }
+    }
+
+    private func pollHealth() async {
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty, let url = URL(string: base + "/status") else {
+            healthPiReachable = false
+            healthLastError   = "Pi server URL not configured"
+            return
+        }
+        do {
+            var req = URLRequest(url: url)
+            req.timeoutInterval = 4
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let poll = try JSONDecoder().decode(HealthPoll.self, from: data)
+            healthPiReachable     = true
+            healthBridgeReachable = poll.esp32BridgeReachable ?? false
+            healthBleConnected    = poll.esp32Connected       ?? false
+            healthYoloRunning     = poll.yoloRunning          ?? false
+            healthYoloSimMode     = poll.yoloSimMode          ?? true
+            healthIsRecording     = poll.recording            ?? false
+            healthSsdMounted      = poll.ssdMounted           ?? false
+            healthSsdFreePct      = poll.ssdFreePct           ?? 0
+            healthLastPollAt      = Date()
+            healthLastError       = nil
+        } catch {
+            healthPiReachable = false
+            healthLastError   = error.localizedDescription
         }
     }
 
