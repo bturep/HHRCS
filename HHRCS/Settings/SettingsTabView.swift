@@ -15,7 +15,8 @@ struct SettingsTabView: View {
 
     @State private var isRestartingHhrcs    = false
     @State private var isRestartingDetector = false
-    @State private var diagnosticPanel: DiagnosticPanelMode = .closed
+    @State private var showLog:   Bool           = false
+    @State private var activeDot: DiagnosticDot? = nil
 
     @State private var piDepActive        = false
     @State private var piDepID            = ""
@@ -96,24 +97,21 @@ struct SettingsTabView: View {
                     diagnosticDotButton(.ssd,    status: ssdStatus)
                 }
 
-                if diagnosticPanel != .closed {
+                if let dot = activeDot {
                     HRule()
-                    switch diagnosticPanel {
-                    case .log:
-                        logPanelView
-                    case .detail(let dot):
-                        dotDetailPanel(dot)
-                    case .closed:
-                        EmptyView()
-                    }
+                    dotDetailPanel(dot)
+                } else if showLog {
+                    HRule()
+                    logPanelView
                 }
 
                 Button {
                     withAnimation(.easeInOut(duration: 0.25)) {
-                        diagnosticPanel = diagnosticPanel == .log ? .closed : .log
+                        showLog.toggle()
+                        if showLog { activeDot = nil }
                     }
                 } label: {
-                    Image(systemName: diagnosticPanel == .log ? "chevron.up" : "chevron.down")
+                    Image(systemName: showLog ? "chevron.up" : "chevron.down")
                         .font(.system(size: 10, weight: .regular, design: .monospaced))
                         .foregroundStyle(Theme.tertiary)
                         .frame(maxWidth: .infinity)
@@ -122,17 +120,19 @@ struct SettingsTabView: View {
                 .buttonStyle(.plain)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: diagnosticPanel)
+        .animation(.easeInOut(duration: 0.2), value: showLog)
+        .animation(.easeInOut(duration: 0.2), value: activeDot)
     }
 
     @ViewBuilder
     private func diagnosticDotButton(_ dot: DiagnosticDot, status: HealthStatus) -> some View {
         Button {
             withAnimation(.easeInOut(duration: 0.2)) {
-                if case .detail(let current) = diagnosticPanel, current == dot {
-                    diagnosticPanel = .closed
+                if activeDot == dot {
+                    activeDot = nil
                 } else {
-                    diagnosticPanel = .detail(dot)
+                    activeDot = dot
+                    showLog = false
                 }
             }
         } label: {
@@ -199,7 +199,7 @@ struct SettingsTabView: View {
                     .padding(.vertical, 4)
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(vm.filteredEventLog) { line in
                             DiagnosticEventRow(line: line)
                         }
@@ -531,30 +531,6 @@ struct SettingsTabView: View {
                     subtitle: "Show autonomous observations in Log",
                     isOn:     $settings.piAgentLogEnabled
                 )
-                HRule()
-                HStack {
-                    Spacer()
-                    Button { Task { await restartHhrcs() } } label: {
-                        Text(isRestartingHhrcs ? "Restarting…" : "RESTART HHRCS")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(isRestartingHhrcs ? Theme.tertiary : Theme.accent)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isRestartingHhrcs)
-                }
-                .padding(.vertical, 8)
-                HRule()
-                HStack {
-                    Spacer()
-                    Button { Task { await restartDetector() } } label: {
-                        Text(isRestartingDetector ? "Restarting detector…" : "RESTART DETECTOR")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(isRestartingDetector ? Theme.tertiary : Theme.accent)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isRestartingDetector)
-                }
-                .padding(.vertical, 8)
             }
         }
     }

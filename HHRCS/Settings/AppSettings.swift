@@ -121,17 +121,21 @@ final class AppSettings: ObservableObject {
         static let notifyDeployments        = "hhrcs.notifyDeployments"
     }
 
+    // TODO: INSERT ANTHROPIC_API_KEY HERE
+    private static let anthropicAPIKeyDefault = ""
+
     private init() {
         let ud = UserDefaults.standard
         deploymentName           = ud.string(forKey: Keys.deploymentName) ?? "HUNTER HOUSE"
         positionName             = ud.string(forKey: Keys.positionName) ?? "POSITION 1"
         latitude                 = ud.object(forKey: Keys.latitude)  as? Double ?? 48.515
         longitude                = ud.object(forKey: Keys.longitude) as? Double ?? -123.408
-        piServerURL              = ud.string(forKey: Keys.piServerURL) ?? ""
         let storedURLs           = ud.stringArray(forKey: Keys.savedServerURLs) ?? []
-        savedServerURLs          = storedURLs.isEmpty
+        let defaultURLs          = storedURLs.isEmpty
             ? ["http://raspberrypi.local:5001", "http://100.118.27.125:5001"]
             : storedURLs
+        savedServerURLs          = defaultURLs
+        piServerURL              = ud.string(forKey: Keys.piServerURL) ?? defaultURLs[0]
         simulationMode           = ud.object(forKey: Keys.simulationMode) as? Bool ?? true
         dawnDuskWindows          = ud.object(forKey: Keys.dawnDuskWindows) as? Bool ?? false
         detectionTrigger         = ud.object(forKey: Keys.detectionTrigger) as? Bool ?? true
@@ -140,7 +144,7 @@ final class AppSettings: ObservableObject {
         thirtyMinStills          = ud.object(forKey: Keys.thirtyMinStills) as? Bool ?? false
         controlPIN               = ud.string(forKey: Keys.controlPIN) ?? "0000"
         piAgentLogEnabled        = ud.object(forKey: Keys.piAgentLogEnabled) as? Bool ?? true
-        anthropicAPIKey          = ud.string(forKey: Keys.anthropicAPIKey) ?? ""
+        anthropicAPIKey          = ud.string(forKey: Keys.anthropicAPIKey) ?? Self.anthropicAPIKeyDefault
         ownerModeEnabled         = ud.object(forKey: Keys.ownerModeEnabled) as? Bool ?? false
         ownerPassword            = ud.string(forKey: Keys.ownerPassword) ?? "0000"
         notifyRecording          = ud.object(forKey: Keys.notifyRecording)    as? Bool ?? true

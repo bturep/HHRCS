@@ -15,6 +15,8 @@ private enum CameraPage: Int, CaseIterable {
 }
 
 struct CameraTabView: View {
+    var isActive: Bool = true
+
     @EnvironmentObject var vm: DataViewModel
     @EnvironmentObject var orientationObserver: DeviceOrientationObserver
     @ObservedObject private var settings = AppSettings.shared
@@ -119,6 +121,16 @@ struct CameraTabView: View {
             if currentPage == .live {
                 mjpegPlayer.stop()
                 mjpegPlayer.start()
+            }
+        }
+        .onChange(of: isActive) { _, active in
+            if active {
+                if currentPage == .live || currentPage == .detection {
+                    mjpegPlayer.streamURL = streamURL
+                    mjpegPlayer.start()
+                }
+            } else {
+                mjpegPlayer.stop()
             }
         }
     }

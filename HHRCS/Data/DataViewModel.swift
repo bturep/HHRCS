@@ -142,7 +142,6 @@ final class DataViewModel: ObservableObject {
         if AppSettings.shared.piServerURL.isEmpty {
             aiLogEntries = AILogEntry.simulatedEntries()
         }
-        stills = CapturedStill.simulatedEntries()
         Task { await refreshWeather() }
         Task { await refreshAstro() }
         startHealthPolling()
@@ -167,6 +166,18 @@ final class DataViewModel: ObservableObject {
         healthTask?.cancel()
         logTask?.cancel()
         notificationTask?.cancel()
+    }
+
+    func suspend() {
+        healthTask?.cancel()
+        logTask?.cancel()
+        notificationTask?.cancel()
+    }
+
+    func resume() {
+        startHealthPolling()
+        startLogPolling()
+        startNotificationPolling()
     }
 
     func refreshWeather() async {

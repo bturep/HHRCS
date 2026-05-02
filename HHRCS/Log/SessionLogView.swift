@@ -32,7 +32,7 @@ struct LogEntry: Identifiable {
 final class SessionLogStore: ObservableObject {
     @Published private(set) var entries: [LogEntry] = []
 
-    init() { entries = Self.simulatedEntries() }
+    init() { }
 
     private static func simulatedEntries() -> [LogEntry] {
         let now = Date()

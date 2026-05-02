@@ -60,7 +60,7 @@ struct ContentView: View {
                 .opacity(selectedTab == 0 ? 1 : 0)
                 .allowsHitTesting(selectedTab == 0)
 
-            CameraTabView()
+            CameraTabView(isActive: selectedTab == 1)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .opacity(selectedTab == 1 ? 1 : 0)
                 .allowsHitTesting(selectedTab == 1)
@@ -145,6 +145,6 @@ private struct AppTabBar: View {
         if tab.tag == 1 && (dataVM.isRecording || dataVM.isPiCamRecording) {
             return Theme.recordingRed
         }
-        return selectedTab == tab.tag ? Theme.accent : Color(white: 0.38)
+        return selectedTab == tab.tag ? Theme.accentOrange : Color(white: 0.38)
     }
 }

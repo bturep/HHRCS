@@ -24,6 +24,7 @@ struct HHRCSApp: App {
     #endif
     @StateObject private var dataVM              = DataViewModel()
     @StateObject private var orientationObserver = DeviceOrientationObserver()
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         configureAppearance()
@@ -44,6 +45,13 @@ struct HHRCSApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         #endif
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:                dataVM.resume()
+            case .inactive, .background: dataVM.suspend()
+            @unknown default:            break
+            }
+        }
     }
 
     private func configureAppearance() {
