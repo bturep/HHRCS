@@ -8,6 +8,11 @@ enum Theme {
     static let accent             = Color(red: 0.769, green: 0.443, blue: 0.290) // #C4714A
     static let accentOrange       = Color(red: 1.000, green: 0.549, blue: 0.000) // #FF8C00
     static let recordingRed       = Color(red: 0.800, green: 0.200, blue: 0.200) // #CC3333
+
+    // Status dot tokens — explicit vivid values for perceptual consistency with accentOrange
+    static let dotGreen           = Color(hex: "00C853") // vivid green
+    static let dotAmber           = Color(hex: "FFB300") // vivid amber (distinct from accentOrange)
+    static let dotRed             = Color(hex: "E53935") // vivid red
     static let cardLabel          = Color(white: 0.333) // #555550
     static let text               = Color.white
     static let secondary          = Color(white: 0.55)

@@ -125,7 +125,7 @@ private struct AppTabBar: View {
                     .overlay(alignment: .topTrailing) {
                         if tab.tag == 3 && dataVM.hasSystemAlert {
                             Circle()
-                                .fill(Color(red: 0.85, green: 0.22, blue: 0.18))
+                                .fill(Theme.recordingRed)
                                 .frame(width: 7, height: 7)
                                 .offset(x: 3, y: -2)
                         }

@@ -69,14 +69,9 @@ struct StillFrameView: View {
     private var emptyState: some View {
         VStack(spacing: 16) {
             Spacer()
-            ZStack {
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(Theme.accent.opacity(0.25), lineWidth: 1)
-                    .frame(width: 72, height: 72)
-                Image(systemName: "camera")
-                    .font(.system(size: 34, weight: .thin))
-                    .foregroundStyle(Theme.accent.opacity(0.6))
-            }
+            Image(systemName: "camera")
+                .font(.system(size: 44, weight: .thin))
+                .foregroundStyle(Theme.tertiary)
             Text("NO STILL CAPTURED")
                 .font(Theme.dataLabel())
                 .tracking(Theme.labelTracking)

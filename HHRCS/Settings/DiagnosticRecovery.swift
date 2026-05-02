@@ -105,12 +105,12 @@ struct RecoveryFlowView: View {
         case .success:
             Image(systemName: "checkmark")
                 .font(.system(size: 7, weight: .bold))
-                .foregroundStyle(Color(red: 0.22, green: 0.60, blue: 0.32))
+                .foregroundStyle(Theme.dotGreen)
                 .frame(width: 8, height: 8)
         case .failed:
             Image(systemName: "xmark")
                 .font(.system(size: 7, weight: .bold))
-                .foregroundStyle(Color(red: 0.75, green: 0.25, blue: 0.20))
+                .foregroundStyle(Theme.dotRed)
                 .frame(width: 8, height: 8)
         }
     }
@@ -134,7 +134,7 @@ struct RecoveryFlowView: View {
         case .failed(let msg):
             Text(msg)
                 .font(.system(size: 9, weight: .regular, design: .monospaced))
-                .foregroundStyle(Color(red: 0.75, green: 0.25, blue: 0.20))
+                .foregroundStyle(Theme.dotRed)
                 .lineLimit(1)
         default:
             EmptyView()
@@ -173,7 +173,7 @@ struct PiDetailView: View {
         VStack(spacing: 0) {
             diagRow("STATUS",
                     value:      vm.healthPiReachable ? "Reachable" : "Unreachable",
-                    valueColor: vm.healthPiReachable ? Theme.accent : Color(red: 0.75, green: 0.25, blue: 0.20))
+                    valueColor: vm.healthPiReachable ? Theme.accentOrange : Theme.dotRed)
             HRule()
             diagRow("LAST POLL",
                     value:      vm.healthLastPollAt.map { Self.fmt.string(from: $0) } ?? "—",
@@ -204,11 +204,11 @@ struct BridgeDetailView: View {
             } else {
                 diagRow("BRIDGE",
                         value:      vm.healthBridgeReachable ? "Reachable" : "Unreachable",
-                        valueColor: vm.healthBridgeReachable ? Theme.accent : Color(red: 0.75, green: 0.25, blue: 0.20))
+                        valueColor: vm.healthBridgeReachable ? Theme.accentOrange : Theme.dotRed)
                 HRule()
                 diagRow("BLE STATE",
                         value:      vm.healthEsp32BleState,
-                        valueColor: vm.healthBleConnected ? Theme.accent : Theme.secondary)
+                        valueColor: vm.healthBleConnected ? Theme.accentOrange : Theme.secondary)
                 HRule()
                 diagRecoveryButton("RESTART BRIDGE") { showingRecovery = true }
             }
@@ -264,11 +264,11 @@ struct BleDetailView: View {
             } else {
                 diagRow("BLE STATE",
                         value:      vm.healthEsp32BleState,
-                        valueColor: vm.healthBleConnected ? Theme.accent : Color(red: 0.75, green: 0.25, blue: 0.20))
+                        valueColor: vm.healthBleConnected ? Theme.accentOrange : Theme.dotRed)
                 HRule()
                 diagRow("BRIDGE",
                         value:      vm.healthBridgeReachable ? "Reachable" : "Unreachable",
-                        valueColor: vm.healthBridgeReachable ? Theme.accent : Theme.secondary)
+                        valueColor: vm.healthBridgeReachable ? Theme.accentOrange : Theme.secondary)
                 HRule()
                 diagRecoveryButton("RECOVER ESP32") { showingRecovery = true }
             }
@@ -323,11 +323,11 @@ struct YoloDetailView: View {
             } else {
                 diagRow("STATUS",
                         value:      vm.healthYoloRunning ? "Running" : "Not running",
-                        valueColor: vm.healthYoloRunning ? Theme.accent : Color(red: 0.75, green: 0.25, blue: 0.20))
+                        valueColor: vm.healthYoloRunning ? Theme.accentOrange : Theme.dotRed)
                 HRule()
                 diagRow("MODE",
                         value:      vm.healthYoloSimMode ? "Simulation" : "Live inference",
-                        valueColor: vm.healthYoloSimMode ? Theme.accentOrange : Theme.accent)
+                        valueColor: vm.healthYoloSimMode ? Theme.dotAmber : Theme.accentOrange)
                 HRule()
                 diagRow("LAST INFER",
                         value:      vm.healthDetectLastAgoSec.map { String(format: "%.0fs ago", $0) } ?? "—",
@@ -379,7 +379,7 @@ struct SsdDetailView: View {
         VStack(spacing: 0) {
             diagRow("STATUS",
                     value:      vm.healthSsdMounted ? "Mounted" : "Not mounted",
-                    valueColor: vm.healthSsdMounted ? Theme.accent : Color(red: 0.75, green: 0.25, blue: 0.20))
+                    valueColor: vm.healthSsdMounted ? Theme.accentOrange : Theme.dotRed)
             HRule()
             diagRow("FREE",
                     value:      vm.healthSsdMounted ? String(format: "%.1f%%", vm.healthSsdFreePct) : "—",
@@ -400,9 +400,9 @@ struct SsdDetailView: View {
 
     private var ssdFreeColor: Color {
         guard vm.healthSsdMounted else { return Theme.tertiary }
-        if vm.healthSsdFreePct < 5  { return Color(red: 0.75, green: 0.25, blue: 0.20) }
-        if vm.healthSsdFreePct < 10 { return Theme.accentOrange }
-        return Theme.accent
+        if vm.healthSsdFreePct < 5  { return Theme.dotRed }
+        if vm.healthSsdFreePct < 10 { return Theme.dotAmber }
+        return Theme.accentOrange
     }
 }
 

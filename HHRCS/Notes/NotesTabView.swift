@@ -43,7 +43,7 @@ struct NotesTabView: View {
                                 .foregroundStyle(segment == s ? .white : Theme.tertiary)
                                 .fontWeight(segment == s ? .medium : .regular)
                             Rectangle()
-                                .fill(segment == s ? Theme.accent : Color.clear)
+                                .fill(segment == s ? Theme.accentOrange : Color.clear)
                                 .frame(height: 1)
                         }
                     }

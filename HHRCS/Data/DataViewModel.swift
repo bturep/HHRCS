@@ -108,6 +108,7 @@ final class DataViewModel: ObservableObject {
     func resetForNewDeployment() {
         eventLog     = []
         aiLogEntries = []
+        stills       = []
         deploymentChangeCount += 1
     }
 
@@ -588,6 +589,7 @@ final class DataViewModel: ObservableObject {
                    !data.isEmpty {
                     lastStillData       = data
                     lastStillCapturedAt = Date()
+                    stills.insert(CapturedStill(piCamImageData: data, triggerType: "manual"), at: 0)
                     isCapturingStill    = false
                     return
                 }

@@ -88,7 +88,7 @@ struct AstroArcView: View {
                 let x = xOf(nowF)
                 ctx.fill(
                     Path(ellipseIn: .init(x: x - 4, y: lineY - 4, width: 8, height: 8)),
-                    with: .color(Color(red: 0.769, green: 0.443, blue: 0.290))
+                    with: .color(Theme.accent)
                 )
             }
         }

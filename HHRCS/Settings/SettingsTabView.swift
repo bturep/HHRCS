@@ -81,14 +81,6 @@ struct SettingsTabView: View {
     private var diagnosticCard: some View {
         SectionCard(title: "DIAGNOSTIC") {
             VStack(spacing: 0) {
-                Text(systemAdvisory.text)
-                    .font(.system(size: 9, weight: .regular, design: .monospaced))
-                    .tracking(1.5)
-                    .foregroundStyle(systemAdvisory.color)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 10)
-                    .padding(.bottom, 6)
-
                 HStack(spacing: 0) {
                     diagnosticDotButton(.pi,     status: vm.healthPiReachable ? .green : .red)
                     diagnosticDotButton(.bridge, status: vm.healthBridgeReachable ? .green : .red)
@@ -176,10 +168,10 @@ struct SettingsTabView: View {
                                     ? Theme.background : Theme.secondary)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(vm.eventLogFilter == filter ? Theme.accent : Color.clear)
+                                .background(vm.eventLogFilter == filter ? Theme.accentOrange : Color.clear)
                                 .overlay(RoundedRectangle(cornerRadius: 3)
                                     .stroke(
-                                        vm.eventLogFilter == filter ? Theme.accent : Theme.tertiary,
+                                        vm.eventLogFilter == filter ? Theme.accentOrange : Theme.tertiary,
                                         lineWidth: 0.5
                                     ))
                                 .cornerRadius(3)
@@ -208,22 +200,6 @@ struct SettingsTabView: View {
                 .frame(maxHeight: 170)
             }
         }
-    }
-
-    private var systemAdvisory: (text: String, color: Color) {
-        if !vm.healthPiReachable {
-            return ("PI UNREACHABLE · ALL SYSTEMS OFFLINE", Theme.recordingRed)
-        }
-        if !vm.healthBridgeReachable {
-            return ("BRIDGE OFFLINE · BLE AND CAMERA UNAVAILABLE", Theme.recordingRed)
-        }
-        if vm.healthEsp32BleState != "Connected" {
-            return ("BLE DISCONNECTED · TAP BLE TO RECOVER", Theme.accentOrange)
-        }
-        if vm.healthYoloSimMode || !vm.healthYoloRunning {
-            return ("DETECTOR IN SIM MODE · TAP YOLO TO RESET", Theme.accentOrange)
-        }
-        return ("ALL SYSTEMS NOMINAL", Theme.tertiary)
     }
 
     private var yoloStatus: HealthStatus {

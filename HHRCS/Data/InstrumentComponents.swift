@@ -168,9 +168,9 @@ enum HealthStatus {
 
     var color: Color {
         switch self {
-        case .green:  return Color(red: 0.22, green: 0.60, blue: 0.32)
-        case .yellow: return Color(red: 0.82, green: 0.63, blue: 0.12)
-        case .red:    return Color(red: 0.75, green: 0.25, blue: 0.20)
+        case .green:  return Theme.dotGreen
+        case .yellow: return Theme.dotAmber
+        case .red:    return Theme.dotRed
         case .grey:   return Theme.tertiary
         }
     }
