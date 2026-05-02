@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "command.failed",
+  "type": "object",
+  "required": ["command", "target", "error"],
+  "properties": {
+    "command":  { "type": "string" },
+    "target":   { "type": "string" },
+    "error":    { "type": "string" }
+  },
+  "additionalProperties": true
+}

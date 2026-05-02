@@ -24,3 +24,31 @@ DerivedData/
 
 ## macOS
 .DS_Store
+
+## Pi runtime artifacts (not source)
+pi/venv/
+pi/models/
+pi/data/
+pi/deployments/
+pi/sessions/
+pi/stills/
+pi/logs/
+pi/*.bin
+pi/*.onnx
+
+## Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+## ESP32 / PlatformIO build artifacts
+esp32/.pio/
+esp32/.pioenvs/
+esp32/lib_deps/
+
+## Tools — model files and venvs (not source)
+tools/*.onnx
+tools/*.pt
+tools/.venv_export/
+tools/.venv*/

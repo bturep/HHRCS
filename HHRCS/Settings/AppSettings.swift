@@ -16,6 +16,9 @@ final class AppSettings: ObservableObject {
     @Published var piServerURL: String {
         didSet { UserDefaults.standard.set(piServerURL, forKey: Keys.piServerURL) }
     }
+    @Published var savedServerURLs: [String] {
+        didSet { UserDefaults.standard.set(savedServerURLs, forKey: Keys.savedServerURLs) }
+    }
 
     // MARK: – System toggles
     @Published var simulationMode: Bool {
@@ -48,13 +51,11 @@ final class AppSettings: ObservableObject {
 
     // MARK: – Derived URLs (not persisted)
 
-    /// Base URL for the camera stream server, derived from piServerURL by substituting port 8080.
-    /// e.g. http://raspberrypi.local:5000 → http://raspberrypi.local:8080
+    /// Base URL for the camera stream server — same host/port as piServerURL.
     var streamBaseURL: String {
         guard !piServerURL.isEmpty,
               var components = URLComponents(string: piServerURL),
               components.host != nil else { return "" }
-        components.port = 8080
         components.path = ""
         return components.string ?? ""
     }
@@ -65,6 +66,17 @@ final class AppSettings: ObservableObject {
     }
     @Published var anthropicAPIKey: String {
         didSet { UserDefaults.standard.set(anthropicAPIKey, forKey: Keys.anthropicAPIKey) }
+    }
+
+    // MARK: – Notification category toggles
+    @Published var notifyRecording: Bool {
+        didSet { UserDefaults.standard.set(notifyRecording, forKey: Keys.notifyRecording) }
+    }
+    @Published var notifyDetections: Bool {
+        didSet { UserDefaults.standard.set(notifyDetections, forKey: Keys.notifyDetections) }
+    }
+    @Published var notifyDeployments: Bool {
+        didSet { UserDefaults.standard.set(notifyDeployments, forKey: Keys.notifyDeployments) }
     }
 
     // MARK: – Owner Mode
@@ -92,6 +104,7 @@ final class AppSettings: ObservableObject {
         static let latitude                 = "hhrcs.latitude"
         static let longitude                = "hhrcs.longitude"
         static let piServerURL              = "hhrcs.piServerURL"
+        static let savedServerURLs          = "hhrcs.savedServerURLs"
         static let simulationMode           = "hhrcs.simulationMode"
         static let dawnDuskWindows          = "hhrcs.dawnDuskWindows"
         static let detectionTrigger         = "hhrcs.detectionTrigger"
@@ -103,6 +116,9 @@ final class AppSettings: ObservableObject {
         static let anthropicAPIKey          = "hhrcs.anthropicAPIKey"
         static let ownerModeEnabled         = "hhrcs.ownerModeEnabled"
         static let ownerPassword            = "hhrcs.ownerPassword"
+        static let notifyRecording          = "hhrcs.notifyRecording"
+        static let notifyDetections         = "hhrcs.notifyDetections"
+        static let notifyDeployments        = "hhrcs.notifyDeployments"
     }
 
     private init() {
@@ -112,6 +128,10 @@ final class AppSettings: ObservableObject {
         latitude                 = ud.object(forKey: Keys.latitude)  as? Double ?? 48.515
         longitude                = ud.object(forKey: Keys.longitude) as? Double ?? -123.408
         piServerURL              = ud.string(forKey: Keys.piServerURL) ?? ""
+        let storedURLs           = ud.stringArray(forKey: Keys.savedServerURLs) ?? []
+        savedServerURLs          = storedURLs.isEmpty
+            ? ["http://raspberrypi.local:5001", "http://100.118.27.125:5001"]
+            : storedURLs
         simulationMode           = ud.object(forKey: Keys.simulationMode) as? Bool ?? true
         dawnDuskWindows          = ud.object(forKey: Keys.dawnDuskWindows) as? Bool ?? false
         detectionTrigger         = ud.object(forKey: Keys.detectionTrigger) as? Bool ?? true
@@ -123,5 +143,8 @@ final class AppSettings: ObservableObject {
         anthropicAPIKey          = ud.string(forKey: Keys.anthropicAPIKey) ?? ""
         ownerModeEnabled         = ud.object(forKey: Keys.ownerModeEnabled) as? Bool ?? false
         ownerPassword            = ud.string(forKey: Keys.ownerPassword) ?? "0000"
+        notifyRecording          = ud.object(forKey: Keys.notifyRecording)    as? Bool ?? true
+        notifyDetections         = ud.object(forKey: Keys.notifyDetections)   as? Bool ?? true
+        notifyDeployments        = ud.object(forKey: Keys.notifyDeployments)  as? Bool ?? true
     }
 }

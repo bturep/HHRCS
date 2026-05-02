@@ -1,30 +1,40 @@
 import SwiftUI
 
-private enum NoteSegment: String, CaseIterable {
-    case notes  = "NOTES"
-    case log    = "LOG"
-    case stills = "STILLS"
+private enum FieldSegment: String, CaseIterable {
     case agent  = "AGENT"
+    case stills = "STILLS"
+    case log    = "LOG"
 }
 
 struct NotesTabView: View {
-    @EnvironmentObject var store:  NotesStore
     @EnvironmentObject var dataVM: DataViewModel
-
-    @StateObject private var logStore = SessionLogStore()
     @ObservedObject private var settings = AppSettings.shared
 
-    @State private var segment: NoteSegment = .notes
-    @State private var draftName = ""
-    @State private var draftText = ""
+    @StateObject private var logStore = SessionLogStore()
+    @State private var segment: FieldSegment = .agent
+    @State private var agentQueryDraft = ""
+    @State private var hasSentQuery      = false
+    @State private var startupQueryFired  = false
+    @State private var startupScrollDone  = false
+    @State private var startupFiredAt: Date? = nil
+    @State private var startupChatWasEmpty = true
 
-    @AppStorage("hhrcs.lastNoteName") private var savedName = ""
+    private var queryEntries: [AILogEntry] {
+        dataVM.aiLogEntries
+            .filter { $0.type == "query" }
+            .sorted { $0.timestamp < $1.timestamp }
+    }
+
+    private var latestSummary: AILogEntry? {
+        dataVM.aiLogEntries
+            .filter { $0.type == "summary" }
+            .max(by: { $0.timestamp < $1.timestamp })
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Custom segment toggle
             HStack(spacing: 24) {
-                ForEach(NoteSegment.allCases, id: \.self) { s in
+                ForEach(FieldSegment.allCases, id: \.self) { s in
                     Button(action: { withAnimation(.easeInOut(duration: 0.15)) { segment = s } }) {
                         VStack(spacing: 5) {
                             Text(s.rawValue)
@@ -47,224 +57,203 @@ struct NotesTabView: View {
 
             HRule().padding(.horizontal, Theme.pagePadding)
 
-            if segment == .notes {
-                notesContent
-            } else if segment == .log {
-                SessionLogView(
-                    store: logStore,
-                    agentEntries: settings.piAgentLogEnabled
-                        ? dataVM.aiLogEntries.filter { $0.source == "pi_agent" }
-                        : []
-                )
-            } else if segment == .stills {
-                StillsGalleryView()
-            } else {
-                FieldAgentView()
-            }
-
-            if segment == .notes {
-                Rectangle()
-                    .fill(Color.white.opacity(0.20))
-                    .frame(height: 1)
-
-                composeBar
-                    .background(Color(red: 0.102, green: 0.102, blue: 0.094))
+            switch segment {
+            case .log:    logContent
+            case .agent:  agentContent
+            case .stills: StillsGalleryView()
             }
         }
         .background(Theme.background)
-        .onAppear {
-            if draftName.isEmpty { draftName = savedName }
-        }
     }
 
-    // MARK: – Notes list
-    @ViewBuilder
-    private var notesContent: some View {
-        if store.notes.isEmpty {
-            Spacer()
-            Text("no notes yet")
-                .font(Theme.statusCaption())
-                .foregroundStyle(Theme.tertiary)
-            Spacer()
-        } else {
-            List {
-                ForEach(notesByDay, id: \.header) { group in
-                    Section {
-                        ForEach(group.notes) { note in
-                            NoteRow(note: note)
-                                .listRowBackground(Theme.background)
-                                .listRowSeparatorTint(Theme.rule)
-                                .listRowInsets(EdgeInsets(
-                                    top: 10, leading: Theme.pagePadding,
-                                    bottom: 10, trailing: Theme.pagePadding
-                                ))
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button {
-                                        store.deleteNote(withID: note.id)
-                                    } label: {
-                                        Text("DELETE")
-                                    }
-                                    .tint(Theme.accent)
-                                }
+    // MARK: – LOG tab
+
+    private var logContent: some View {
+        SessionLogView(
+            store: logStore,
+            agentEntries: settings.piAgentLogEnabled
+                ? dataVM.aiLogEntries.filter { $0.type == "summary" }
+                : []
+        )
+    }
+
+    // MARK: – AGENT tab
+
+    private var agentContent: some View {
+        VStack(spacing: 0) {
+            // Pinned summary card — static, does not scroll
+            if let summary = latestSummary {
+                Text(summary.content)
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Theme.pagePadding)
+                    .padding(.vertical, 10)
+                    .background(Theme.background)
+                HRule().padding(.horizontal, Theme.pagePadding)
+            }
+
+            // Chat area — query entries only
+            let queries = queryEntries
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 20) {
+                        ForEach(queries) { entry in
+                            ChatExchangeView(entry: entry)
                         }
-                    } header: {
-                        Text(group.header)
-                            .font(Theme.dataLabel(size: 9))
-                            .tracking(Theme.headerTracking)
-                            .foregroundStyle(Theme.tertiary)
-                            .padding(.horizontal, Theme.pagePadding)
-                            .padding(.vertical, 4)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Theme.background)
-                            .textCase(nil)
+                        Color.clear.frame(height: 0).id("bottomAnchor")
+                    }
+                    .padding(.horizontal, Theme.pagePadding)
+                    .padding(.top, 16)
+                    .padding(.bottom, 8)
+                }
+                .onAppear {
+                    withAnimation(.none) { proxy.scrollTo("bottomAnchor", anchor: .bottom) }
+                    guard !startupQueryFired else { return }
+                    startupChatWasEmpty = queries.isEmpty
+                    startupQueryFired   = true
+                    startupFiredAt      = Date()
+                    Task { await fireStartupQuery() }
+                }
+                .onChange(of: queries.count) {
+                    // Anchor startup response to top only when chat was empty at launch
+                    if startupQueryFired && !hasSentQuery && !startupScrollDone && startupChatWasEmpty,
+                       let firedAt = startupFiredAt,
+                       let last = queries.last,
+                       last.timestamp >= firedAt.addingTimeInterval(-30) {
+                        withAnimation(.none) { proxy.scrollTo(last.id, anchor: .top) }
+                        startupScrollDone = true
+                        return
+                    }
+                    if hasSentQuery || (startupQueryFired && !startupChatWasEmpty) {
+                        withAnimation(.none) { proxy.scrollTo("bottomAnchor", anchor: .bottom) }
                     }
                 }
-            }
-            .listStyle(.plain)
-            .background(Theme.background)
-            .scrollContentBackground(.hidden)
-        }
-    }
-
-    // MARK: – Day groups (newest day first)
-    private struct NoteGroup { let header: String; let notes: [Note] }
-
-    private var notesByDay: [NoteGroup] {
-        var cal = Calendar.current
-        cal.timeZone = TimeZone(identifier: "America/Vancouver")!
-        let fmt = DateFormatter()
-        fmt.locale = Locale(identifier: "en_US_POSIX")
-        fmt.timeZone = cal.timeZone
-        fmt.dateFormat = "EEE d MMM"
-
-        var groups: [NoteGroup] = []
-        var lastDay: Date? = nil
-        var batch: [Note] = []
-
-        for note in store.notes {
-            let day = cal.startOfDay(for: note.timestamp)
-            if let last = lastDay, cal.isDate(last, inSameDayAs: note.timestamp) {
-                batch.append(note)
-            } else {
-                if !batch.isEmpty, let last = lastDay {
-                    groups.append(NoteGroup(header: fmt.string(from: last).uppercased(), notes: batch))
+                .onChange(of: dataVM.deploymentChangeCount) {
+                    // New deployment created — reset chat and fire a fresh startup summary
+                    hasSentQuery       = false
+                    startupQueryFired  = false
+                    startupScrollDone  = false
+                    startupFiredAt     = nil
+                    startupChatWasEmpty = true
+                    startupQueryFired  = true
+                    startupFiredAt     = Date()
+                    Task { await fireStartupQuery() }
                 }
-                lastDay = day
-                batch = [note]
             }
-        }
-        if !batch.isEmpty, let last = lastDay {
-            groups.append(NoteGroup(header: fmt.string(from: last).uppercased(), notes: batch))
-        }
-        return groups
-    }
 
-    // MARK: – Compose bar
-    private var composeBar: some View {
-        VStack(spacing: 0) {
-            Spacer().frame(height: 12)
-            HStack(spacing: 8) {
-                Text("FROM")
-                    .font(Theme.dataLabel(size: 9))
-                    .tracking(Theme.labelTracking)
-                    .foregroundStyle(Theme.tertiary)
-                TextField("name", text: $draftName)
-                    .font(.system(size: 14, weight: .regular, design: .monospaced))
+            HRule().padding(.horizontal, Theme.pagePadding)
+
+            HStack(alignment: .center, spacing: 10) {
+                TextField("Message", text: $agentQueryDraft, axis: .vertical)
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .foregroundStyle(.white)
-                    .tint(Theme.accent)
-                    .submitLabel(.next)
-                    .onChange(of: draftName) { _, v in savedName = v }
-            }
-            .padding(.horizontal, Theme.pagePadding)
-            HRule()
-                .padding(.vertical, 10)
-                .padding(.horizontal, Theme.pagePadding)
-            HStack(alignment: .bottom, spacing: 10) {
-                TextField("note", text: $draftText, axis: .vertical)
-                    .font(.system(size: 14, weight: .regular, design: .monospaced))
-                    .foregroundStyle(.white)
-                    .tint(Theme.accent)
+                    .tint(Theme.accentOrange)
                     .lineLimit(1...4)
                     .submitLabel(.send)
-                    .onSubmit { post() }
-                Button(action: post) {
-                    ZStack {
-                        Circle()
-                            .fill(canPost ? Theme.accent : Color.white.opacity(0.07))
-                            .frame(width: 32, height: 32)
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(canPost ? .white : Theme.tertiary)
-                    }
+                    .onSubmit { submitAgentQuery() }
+                Button(action: submitAgentQuery) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(canSendQuery ? Theme.accentOrange : Theme.tertiary)
                 }
-                .disabled(!canPost)
+                .disabled(!canSendQuery)
                 .buttonStyle(.plain)
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .padding(.horizontal, Theme.pagePadding)
-            .padding(.bottom, 14)
+            .padding(.vertical, 12)
+            .background(Theme.background)
+
+            HRule().padding(.horizontal, Theme.pagePadding)
         }
     }
 
-    private var canPost: Bool {
-        !draftName.trimmingCharacters(in: .whitespaces).isEmpty &&
-        !draftText.trimmingCharacters(in: .whitespaces).isEmpty
+    private var canSendQuery: Bool {
+        !agentQueryDraft.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
-    private func post() {
-        guard canPost else { return }
-        let recentStill = dataVM.lastStillCapturedAt.map { abs($0.timeIntervalSinceNow) < 120 } ?? false
-        store.add(
-            authorName:        draftName.trimmingCharacters(in: .whitespaces),
-            text:              draftText.trimmingCharacters(in: .whitespaces),
-            lux:               dataVM.lux,
-            isRecording:       dataVM.isRecording,
-            triggerLabel:      dataVM.triggerStateLabel,
-            enclosureTempC:    dataVM.enclosureTempC,
-            recordingDuration: dataVM.recordingDurationString,
-            hasThumbnail:      recentStill
-        )
-        draftText = ""
+    private func submitAgentQuery() {
+        let text = agentQueryDraft.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return }
+        agentQueryDraft = ""
+        hasSentQuery = true
+        Task {
+            let base = AppSettings.shared.piServerURL
+            guard !base.isEmpty, let url = URL(string: base + "/agent-log/query") else { return }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try? JSONSerialization.data(withJSONObject: ["question": text])
+            req.timeoutInterval = 10
+            _ = try? await URLSession.shared.data(for: req)
+        }
+    }
+
+    private func fireStartupQuery() async {
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty, let url = URL(string: base + "/agent-log/startup") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 15
+        _ = try? await URLSession.shared.data(for: req)
     }
 }
 
-// MARK: – Note row
-private struct NoteRow: View {
-    let note: Note
-    @ObservedObject private var settings = AppSettings.shared
+// MARK: – Chat exchange (user question + agent response)
 
-    private static let absFormatter: DateFormatter = {
+private struct ChatExchangeView: View {
+    let entry: AILogEntry
+
+    private static let timeFmt: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "dd MMM HH:mm"
-        f.timeZone   = TimeZone(identifier: "America/Vancouver")
+        f.dateFormat = "HH:mm"
+        f.timeZone = TimeZone(identifier: "America/Vancouver")
         return f
     }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(note.authorName)
-                    .font(.system(size: 11, weight: .medium))
-                    .tracking(1.2)
-                    .foregroundStyle(Color.white.opacity(0.9))
-                Spacer()
-                Text(Self.absFormatter.string(from: note.timestamp))
-                    .font(Theme.dataLabel(size: 9))
-                    .tracking(0.8)
-                    .foregroundStyle(Theme.tertiary)
+        VStack(alignment: .leading, spacing: 12) {
+            // User bubble — right-aligned; hidden for startup (empty question)
+            if let question = entry.query, !question.isEmpty {
+                HStack(alignment: .top, spacing: 0) {
+                    Spacer(minLength: 60)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text(question)
+                            .font(.system(size: 12, weight: .regular, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Theme.secondary, lineWidth: 1)
+                            )
+                        Text(Self.timeFmt.string(from: entry.timestamp))
+                            .font(.system(size: 10, weight: .regular, design: .monospaced))
+                            .foregroundStyle(Theme.tertiary)
+                    }
+                }
             }
-            Text("\(settings.deploymentName) · \(settings.positionName)")
-                .font(.system(size: 10, weight: .regular))
-                .tracking(1.2)
-                .foregroundStyle(Theme.tertiary)
-                .textCase(.uppercase)
-            Text(note.text)
-                .font(Theme.bodyMono(size: 13))
-                .foregroundStyle(.white)
-                .fixedSize(horizontal: false, vertical: true)
-            if note.hasThumbnail {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color(red: 0.165, green: 0.165, blue: 0.157))
-                    .frame(width: 80, height: 45)
+
+            // Agent bubble — left-aligned
+            HStack(alignment: .top, spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(entry.content)
+                        .font(.system(size: 12, weight: .regular, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Theme.cardBackground)
+                        .cornerRadius(10)
+                    Text(Self.timeFmt.string(from: entry.timestamp))
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.tertiary)
+                }
+                Spacer(minLength: 60)
             }
         }
     }

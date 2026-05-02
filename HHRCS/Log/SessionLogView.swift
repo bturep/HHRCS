@@ -14,6 +14,7 @@ struct LogEntry: Identifiable {
     let timestamp:       Date
     let triggerType:     LogTriggerType
     let durationSeconds: Int
+    let confidence:      Double?
     let fileCount:       Int
     let luxAtStart:      Double
     // Detail
@@ -36,16 +37,16 @@ final class SessionLogStore: ObservableObject {
     private static func simulatedEntries() -> [LogEntry] {
         let now = Date()
         let day = 86400.0
-        let rng: [(offset: Double, type: LogTriggerType, dur: Int, files: Int, lux: Double,
-                   iso: Int, nd: Int, avgLux: Double, stills: Int)] = [
-            (-0.5*3600,  .deer,      187, 2, 1240, 3200, 4, 1180, 3),
-            (-2.1*3600,  .scheduled, 300, 3,  890, 1600, 4,  920, 1),
-            (-4.7*3600,  .bird,       62, 1,  540,  400, 2,  510, 2),
-            (-6.2*3600,  .rabbit,    144, 2, 2100, 3200, 6, 2050, 1),
-            (-day - 1.3*3600, .deer, 211, 2, 1780, 3200, 4, 1760, 4),
-            (-day - 3.8*3600, .bird,  48, 1,  420,  400, 2,  415, 1),
-            (-day - 8.1*3600, .scheduled, 300, 3, 680, 800, 2, 700, 1),
-            (-day - 11.4*3600, .rabbit, 93, 1, 390, 400, 0, 380, 2),
+        let rng: [(offset: Double, type: LogTriggerType, dur: Int, conf: Double?,
+                   files: Int, lux: Double, iso: Int, nd: Int, avgLux: Double, stills: Int)] = [
+            (-0.5*3600,        .deer,      187, 0.83, 2, 1240, 3200, 4, 1180, 3),
+            (-2.1*3600,        .scheduled, 300, nil,  3,  890, 1600, 4,  920, 1),
+            (-4.7*3600,        .bird,       62, 0.71, 1,  540,  400, 2,  510, 2),
+            (-6.2*3600,        .rabbit,    144, 0.68, 2, 2100, 3200, 6, 2050, 1),
+            (-day - 1.3*3600,  .deer,      211, 0.91, 2, 1780, 3200, 4, 1760, 4),
+            (-day - 3.8*3600,  .bird,       48, 0.64, 1,  420,  400, 2,  415, 1),
+            (-day - 8.1*3600,  .scheduled, 300, nil,  3,  680,  800, 2,  700, 1),
+            (-day - 11.4*3600, .rabbit,     93, 0.77, 1,  390,  400, 0,  380, 2),
         ]
 
         return rng.enumerated().map { i, r in
@@ -63,6 +64,7 @@ final class SessionLogStore: ObservableObject {
                 timestamp:       ts,
                 triggerType:     r.type,
                 durationSeconds: r.dur,
+                confidence:      r.conf,
                 fileCount:       r.files,
                 luxAtStart:      r.lux,
                 iso:             r.iso,
@@ -73,8 +75,8 @@ final class SessionLogStore: ObservableObject {
                     String(format: "%02d:%02d:%02d", h, m, s+3) + " ACTIVE → COUNTDOWN",
                     String(format: "%02d:%02d:%02d", h, m, s+8) + " COUNTDOWN → HOLDING",
                 ],
-                stillCount:   r.stills,
-                brawFilename: "A001C\(String(format: "%03d", i+1))_\(tsStr.prefix(8))_R7UN.braw",
+                stillCount:    r.stills,
+                brawFilename:  "A001C\(String(format: "%03d", i+1))_\(tsStr.prefix(8))_R7UN.braw",
                 piCamFilename: "session_\(tsStr).mp4"
             )
         }
@@ -152,7 +154,7 @@ struct SessionLogView: View {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(grouped, id: \.header) { group in
                     Text(group.header)
-                        .font(Theme.dataLabel(size: 9))
+                        .font(.system(size: 9, weight: .regular, design: .monospaced))
                         .tracking(Theme.headerTracking)
                         .foregroundStyle(Theme.tertiary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -213,22 +215,15 @@ private struct LogRow: View {
         return m > 0 ? "\(m)m \(s)s" : "\(s)s"
     }
 
-    private var luxLabel: String {
-        entry.luxAtStart >= 1000
-            ? String(format: "%.1fk lx", entry.luxAtStart / 1000)
-            : String(format: "%.0f lx", entry.luxAtStart)
-    }
-
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 3) {
-                // Line 1: timestamp · class name · duration
                 HStack(alignment: .firstTextBaseline) {
                     Text(Self.timeFmt.string(from: entry.timestamp))
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .foregroundStyle(Theme.tertiary)
-                    Text(entry.triggerType.rawValue)
-                        .font(.system(size: 11, weight: .regular))
+                    Text(speciesLabel)
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .tracking(0.8)
                         .foregroundStyle(triggerColor)
                     Spacer()
@@ -236,11 +231,6 @@ private struct LogRow: View {
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .foregroundStyle(Theme.tertiary)
                 }
-
-                // Line 2: compact summary string
-                Text(summaryLine)
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .foregroundStyle(Theme.tertiary)
 
                 // Expanded detail
                 if isExpanded {
@@ -275,12 +265,9 @@ private struct LogRow: View {
         entry.triggerType == .scheduled ? Theme.tertiary : .white
     }
 
-    private var summaryLine: String {
-        let nd  = entry.ndPosition == 0 ? "CLEAR" : "ND\(entry.ndPosition)"
-        let lux = entry.luxAtStart >= 1000
-            ? String(format: "%.1fk lx", entry.luxAtStart / 1000)
-            : String(format: "%.0f lx", entry.luxAtStart)
-        return "\(entry.fileCount) files · ISO \(entry.iso) · \(nd) · \(lux)"
+    private var speciesLabel: String {
+        guard let conf = entry.confidence else { return entry.triggerType.rawValue }
+        return "\(entry.triggerType.rawValue) (\(String(format: "%.2f", conf)))"
     }
 
     private func fileRow(label: String, value: String) -> some View {
@@ -299,7 +286,7 @@ private struct LogRow: View {
     }
 }
 
-// MARK: – Agent log row
+// MARK: – Agent log row (summary entries only — rendered as plain log lines)
 
 private struct AgentLogRow: View {
     let entry: AILogEntry
@@ -312,28 +299,13 @@ private struct AgentLogRow: View {
     }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(Self.timeFmt.string(from: entry.timestamp))
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .foregroundStyle(Theme.tertiary)
-                Text("AGENT")
-                    .font(.system(size: 9, weight: .semibold))
-                    .tracking(1.2)
-                    .foregroundStyle(Theme.accent)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(Theme.accent.opacity(0.12))
-                    .cornerRadius(2)
-                Text(entry.type.uppercased().replacingOccurrences(of: "_", with: " "))
-                    .font(.system(size: 11, weight: .regular))
-                    .tracking(0.6)
-                    .foregroundStyle(Theme.secondary)
-                Spacer()
-            }
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(Self.timeFmt.string(from: entry.timestamp))
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(Theme.tertiary)
             Text(entry.content)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(Color.white.opacity(0.75))
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(Color.white.opacity(0.65))
                 .fixedSize(horizontal: false, vertical: true)
                 .lineSpacing(2)
         }

@@ -44,7 +44,7 @@ struct SectionCard<Content: View>: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(isActive ? Theme.cardBackgroundActive : Theme.cardBackground)
-        .cornerRadius(8)
+        .cornerRadius(Theme.cardRadius)
     }
 }
 
@@ -52,7 +52,7 @@ struct SectionCard<Content: View>: View {
 struct MetricCell: View {
     let value: String
     let label: String
-    var valueSize: CGFloat = 22
+    var valueSize: CGFloat = 13
     var valueColor: Color  = .white
     var monospaced: Bool   = true
 
@@ -66,7 +66,7 @@ struct MetricCell: View {
             Text(label)
                 .font(Theme.dataLabel())
                 .tracking(Theme.labelTracking)
-                .foregroundStyle(Theme.secondary)
+                .foregroundStyle(Theme.tertiary)
         }
     }
 }
@@ -89,12 +89,12 @@ struct BarCell: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(String(format: "%.1f", percent) + "%")
-                .font(Theme.dataValue(size: 22))
+                .font(Theme.dataValue(size: 13))
                 .foregroundStyle(.white)
             Text(label)
                 .font(Theme.dataLabel(size: 9))
                 .tracking(Theme.labelTracking)
-                .foregroundStyle(Theme.secondary)
+                .foregroundStyle(Theme.tertiary)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Rectangle()

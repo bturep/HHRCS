@@ -111,12 +111,12 @@ private struct StillCell: View {
                 .resizable()
                 .scaledToFill()
         } else {
-            Color(red: 0.165, green: 0.165, blue: 0.157)
+            Theme.cardBackground
         }
     }
 
     private var placeholderFullscreen: some View {
-        Color.black.ignoresSafeArea()
+        Theme.background.ignoresSafeArea()
             .overlay(alignment: .topTrailing) {
                 Button { showFullscreen = false } label: {
                     Image(systemName: "xmark")

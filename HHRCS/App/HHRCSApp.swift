@@ -1,9 +1,28 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
+
+// Handles opportunistic background fetch — calls NotificationPoller so users
+// get routine notifications even when the app isn't foregrounded.
+#if canImport(UIKit)
+class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     performFetchWithCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        Task {
+            await NotificationPoller.shared.pollAndSurface()
+            completionHandler(.newData)
+        }
+    }
+}
+#endif
 
 @main
 struct HHRCSApp: App {
-    @StateObject private var dataVM             = DataViewModel()
-    @StateObject private var notesStore         = NotesStore()
+    #if canImport(UIKit)
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    #endif
+    @StateObject private var dataVM              = DataViewModel()
     @StateObject private var orientationObserver = DeviceOrientationObserver()
 
     init() {
@@ -18,7 +37,6 @@ struct HHRCSApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(dataVM)
-                .environmentObject(notesStore)
                 .environmentObject(orientationObserver)
                 .preferredColorScheme(.dark)
         }

@@ -1,0 +1,19 @@
+[Unit]
+Description=HHRCS — Hunter House Remote Camera System
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/hhrcs
+ExecStart=/home/pi/hhrcs/venv/bin/python /home/pi/hhrcs/api_server.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+Environment=PORT=5001
+Environment=YOLO_ENABLED=1
+
+[Install]
+WantedBy=multi-user.target

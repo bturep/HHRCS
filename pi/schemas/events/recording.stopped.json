@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "recording.stopped",
+  "type": "object",
+  "required": ["clip_id", "source", "duration_seconds"],
+  "properties": {
+    "clip_id":           { "type": "string" },
+    "source":            { "type": "string", "enum": ["bmpcc", "pi", "manual"] },
+    "duration_seconds":  { "type": "number", "minimum": 0 }
+  },
+  "additionalProperties": true
+}

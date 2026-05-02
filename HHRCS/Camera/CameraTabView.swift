@@ -1,15 +1,15 @@
 import SwiftUI
 
 private enum CameraPage: Int, CaseIterable {
-    case live       = 0
-    case detection  = 1
-    case still      = 2
+    case still     = 0
+    case live      = 1
+    case detection = 2
 
     var label: String {
         switch self {
+        case .still:     return "BMPCC"
         case .live:      return "CAM"
         case .detection: return "DETECT"
-        case .still:     return "STILL"
         }
     }
 }
@@ -19,18 +19,27 @@ struct CameraTabView: View {
     @EnvironmentObject var orientationObserver: DeviceOrientationObserver
     @ObservedObject private var settings = AppSettings.shared
 
-    @State private var currentPage      = CameraPage.live
-    @State private var showControlSheet = false
-    @State private var isStreamLive     = false
-    @State private var showLivePopover  = false
-    @State private var showYoloPopover  = false
+    @State private var currentPage       = CameraPage.still
+    @State private var showISOPopover    = false
+    @State private var showWBPopover     = false
+    @State private var showShutterPopover = false
+    @State private var showYoloPopover   = false
+
+    @StateObject private var mjpegPlayer = MJPEGPlayer(
+        url: URL(string: "http://raspberrypi.local:5001/stream")!
+    )
 
     private var isLandscape: Bool { orientationObserver.orientation.isLandscape }
 
     private var streamURL: URL {
-        let base = settings.streamBaseURL
-        if !base.isEmpty, let url = URL(string: base + "/stream") { return url }
-        return URL(string: "http://raspberrypi.local:8080/stream")!
+        if !settings.piServerURL.isEmpty,
+           var c = URLComponents(string: settings.piServerURL),
+           c.host != nil {
+            c.path  = "/stream"
+            c.query = nil
+            if let url = c.url { return url }
+        }
+        return URL(string: "http://raspberrypi.local:5001/stream")!
     }
 
     var body: some View {
@@ -38,115 +47,182 @@ struct CameraTabView: View {
             Theme.background.ignoresSafeArea()
 
             TabView(selection: $currentPage) {
-                MJPEGStreamView(streamURL: streamURL, onConnectionChange: { isStreamLive = $0 })
-                    .id(settings.piServerURL)
+                StillFrameView()
+                    .padding(.top, 32)
+                    .padding(.bottom, 54)
+                    .tag(CameraPage.still)
+
+                MJPEGStreamView(player: mjpegPlayer)
+                    .onAppear {
+                        print("[MJPEG] CAM page appeared url=\(streamURL)")
+                        mjpegPlayer.streamURL = streamURL
+                        mjpegPlayer.start()
+                    }
+                    .onDisappear {
+                        print("[MJPEG] CAM page disappeared — stopping")
+                        mjpegPlayer.stop()
+                    }
+                    .padding(.top, 32)
+                    .padding(.bottom, 54)
                     .tag(CameraPage.live)
 
-                DetectionOverlayView()
+                DetectionOverlayView(player: mjpegPlayer)
+                    .onAppear {
+                        print("[MJPEG] DETECT page appeared url=\(streamURL)")
+                        mjpegPlayer.streamURL = streamURL
+                        mjpegPlayer.start()
+                    }
+                    .onDisappear {
+                        print("[MJPEG] DETECT page disappeared — stopping")
+                        mjpegPlayer.stop()
+                    }
+                    .padding(.top, 32)
+                    .padding(.bottom, 54)
                     .tag(CameraPage.detection)
-
-                StillFrameView()
-                    .tag(CameraPage.still)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .ignoresSafeArea(edges: isLandscape ? .all : .top)
 
             if !isLandscape {
-                controlBar
+                switch currentPage {
+                case .still:
+                    OperatorControlRow(
+                        isOwner: settings.ownerModeEnabled,
+                        isRecording: vm.isRecording,
+                        yoloLocked: vm.yoloLocked,
+                        onRecord: { Task { await vm.toggleBmpccRecord() } },
+                        onCapture: { Task { await vm.captureBmpccStill() } }
+                    ) { pageIndicator }
+                case .live:
+                    OperatorControlRow(
+                        isOwner: settings.ownerModeEnabled,
+                        isRecording: vm.isPiCamRecording,
+                        yoloLocked: false,
+                        onRecord: { vm.togglePiCamRecord() },
+                        onCapture: { Task { await vm.captureStill() } }
+                    ) { pageIndicator }
+                case .detection:
+                    detectionControlBar
+                }
             }
         }
-        // Top HUD — adapts to current page
         .overlay(alignment: .top) {
             switch currentPage {
-            case .live:      hudStrip
+            case .still:     stillDataBar
+            case .live:      EmptyView()
             case .detection: detectionHudStrip
-            case .still:     EmptyView()
-            }
-        }
-        // LIVE badge — top right, live page + connected
-        .overlay(alignment: .topTrailing) {
-            if currentPage == .live && isStreamLive {
-                Button { showLivePopover = true } label: {
-                    liveTag
-                }
-                .buttonStyle(.plain)
-                .padding(12)
-                .popover(isPresented: $showLivePopover) {
-                    LiveInfoPopover(
-                        isConnected: isStreamLive,
-                        lastPollAt:  vm.lastPollAt,
-                        streamURL:   streamURL.absoluteString
-                    )
-                    .presentationCompactAdaptation(.popover)
-                }
             }
         }
         .background(Theme.background)
-        .sheet(isPresented: $showControlSheet) {
-            ControlTabView()
-                .presentationDragIndicator(.visible)
+        .onChange(of: streamURL) { _, url in
+            mjpegPlayer.streamURL = url
+            if currentPage == .live {
+                mjpegPlayer.stop()
+                mjpegPlayer.start()
+            }
         }
     }
 
-    // MARK: – HUD strip (CAM page)
-    // ZStack: left cluster | center gear | right cluster — gear is always at true center
+    // MARK: – Data bar (BMPCC page only)
 
-    private var hudStrip: some View {
-        ZStack {
-            HStack(spacing: 6) {
-                if vm.isRecording {
-                    Circle()
-                        .fill(Theme.accent)
-                        .frame(width: 5, height: 5)
+    private var stillDataBar: some View {
+        HStack(spacing: 0) {
+            // AUTO badge — visible only when YOLO has triggered a recording
+            if vm.yoloLocked && vm.isRecording {
+                Text("AUTO")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.accent)
+                    .padding(.trailing, 10)
+            }
+
+            // ISO
+            Group {
+                if settings.ownerModeEnabled {
+                    Button { showISOPopover = true } label: {
+                        Text("ISO \(vm.iso)")
+                            .foregroundStyle(Color.white.opacity(0.85))
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showISOPopover,
+                             attachmentAnchor: .point(.bottom),
+                             arrowEdge: .top) {
+                        ISOPopover()
+                            .environmentObject(vm)
+                            .frame(width: 280)
+                            .presentationCompactAdaptation(.popover)
+                    }
+                } else {
+                    Text("ISO \(vm.iso)")
+                        .foregroundStyle(Color.white.opacity(0.6))
                 }
-                Text(vm.isRecording ? "REC" : "IDLE")
-                    .foregroundStyle(vm.isRecording ? Theme.accent.opacity(0.9) : Color.white.opacity(0.8))
-                Text(vm.recordingDurationString)
-                    .foregroundStyle(Color.white.opacity(0.8))
-                Spacer()
             }
-            .font(.system(size: 10, weight: .regular, design: .monospaced))
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity)
+            .font(.system(size: 11, weight: .regular, design: .monospaced))
 
-            if settings.ownerModeEnabled {
-                Button { showControlSheet = true } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 13, weight: .light))
-                        .foregroundStyle(Color.white.opacity(0.5))
+            Spacer()
+
+            // WB
+            Group {
+                if settings.ownerModeEnabled {
+                    Button { showWBPopover = true } label: {
+                        Text("\(vm.wbKelvin)K")
+                            .foregroundStyle(Color.white.opacity(0.85))
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showWBPopover,
+                             attachmentAnchor: .point(.bottom),
+                             arrowEdge: .top) {
+                        WBPopover()
+                            .environmentObject(vm)
+                            .frame(width: 280)
+                            .presentationCompactAdaptation(.popover)
+                    }
+                } else {
+                    Text("\(vm.wbKelvin)K")
+                        .foregroundStyle(Color.white.opacity(0.6))
                 }
-                .buttonStyle(.plain)
             }
+            .font(.system(size: 11, weight: .regular, design: .monospaced))
 
-            HStack(spacing: 14) {
-                Spacer()
-                Text(hudLuxLabel)
-                Text(String(format: "EV%.1f", vm.ev))
-                Text(hudNDLabel)
-                Text("ISO \(String(vm.iso))")
+            Spacer()
+
+            // Shutter
+            Group {
+                if settings.ownerModeEnabled {
+                    Button { showShutterPopover = true } label: {
+                        Text(shutterLabel)
+                            .foregroundStyle(Color.white.opacity(0.85))
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showShutterPopover,
+                             attachmentAnchor: .point(.bottom),
+                             arrowEdge: .top) {
+                        ShutterPopover()
+                            .environmentObject(vm)
+                            .frame(width: 280)
+                            .presentationCompactAdaptation(.popover)
+                    }
+                } else {
+                    Text(shutterLabel)
+                        .foregroundStyle(Color.white.opacity(0.6))
+                }
             }
-            .font(.system(size: 10, weight: .regular, design: .monospaced))
-            .foregroundStyle(Color.white.opacity(0.8))
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity)
+            .font(.system(size: 11, weight: .regular, design: .monospaced))
         }
-        .padding(.vertical, 6)
-        .background(Color.black.opacity(0.6))
+        .padding(.horizontal, 12)
+        .frame(height: 32)
+        .background(Theme.background)
         .frame(maxWidth: .infinity)
     }
 
-    private var hudLuxLabel: String {
-        vm.lux >= 1000
-            ? String(format: "%.1fk lx", vm.lux / 1000)
-            : String(format: "%.0f lx", vm.lux)
-    }
-
-    private var hudNDLabel: String {
-        vm.ndPosition == 0 ? "CLEAR" : "ND\(vm.ndPosition)"
+    private var shutterLabel: String {
+        let a = vm.shutterAngle
+        return a.truncatingRemainder(dividingBy: 1) == 0
+            ? "\(Int(a))°"
+            : String(format: "%.1f°", a)
     }
 
     // MARK: – Detection HUD strip
-    // ZStack: state+class left | YOLO badge center | timestamp right
 
     private var detectionHudStrip: some View {
         ZStack {
@@ -180,7 +256,7 @@ struct CameraTabView: View {
             .frame(maxWidth: .infinity)
 
             Button { showYoloPopover = true } label: {
-                Text("YOLOv8  SIM")
+                Text(vm.healthYoloSimMode ? "YOLOv8  SIM" : "YOLOv8  LIVE")
                     .font(.system(size: 8, weight: .medium, design: .monospaced))
                     .tracking(1.5)
                     .foregroundStyle(Theme.accent.opacity(0.9))
@@ -208,113 +284,21 @@ struct CameraTabView: View {
             .frame(maxWidth: .infinity)
         }
         .padding(.vertical, 6)
-        .background(Color.black.opacity(0.6))
+        .background(Theme.background)
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: – LIVE badge
+    // MARK: – Detection bottom bar (just the page indicator)
 
-    private var liveTag: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(Theme.accent)
-                .frame(width: 6, height: 6)
-            Text("LIVE")
-                .font(Theme.dataLabel(size: 9))
-                .tracking(Theme.labelTracking)
-                .foregroundStyle(Theme.accent)
-        }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
-        .background(Theme.background.opacity(0.75))
-        .overlay(
-            RoundedRectangle(cornerRadius: 2)
-                .stroke(Theme.accent.opacity(0.5), lineWidth: Theme.ruleWidth)
-        )
-    }
-
-    // MARK: – Control bar
-    // Left action button | [spacer] page indicator [spacer] | right action button
-    // Both action slots are fixed 56pt wide so page indicator stays screen-centred.
-
-    private var controlBar: some View {
-        HStack(spacing: 0) {
-            leftActionButton
-                .frame(width: 56, height: 44)
-
+    private var detectionControlBar: some View {
+        HStack {
             Spacer()
             pageIndicator
             Spacer()
-
-            rightActionButton
-                .frame(width: 56, height: 44)
         }
-        .padding(.horizontal, 8)
+        .frame(height: 44)
         .padding(.bottom, 10)
-        .background(Theme.background.opacity(0.85))
-    }
-
-    @ViewBuilder
-    private var leftActionButton: some View {
-        switch currentPage {
-        case .live:
-            Button {
-                Task { await vm.toggleRecord() }
-            } label: {
-                Image(systemName: vm.isRecording ? "stop.circle.fill" : "record.circle")
-                    .font(.system(size: 26))
-                    .foregroundStyle(vm.isRecording ? Theme.accent : Color.white.opacity(0.5))
-            }
-            .buttonStyle(.plain)
-        case .detection:
-            // Phase 4: Pi cam record trigger — wired in Phase 4
-            Button { } label: {
-                Image(systemName: "video.circle")
-                    .font(.system(size: 26))
-                    .foregroundStyle(Color.white.opacity(0.25))
-            }
-            .buttonStyle(.plain)
-            .disabled(true)
-        case .still:
-            Color.clear
-        }
-    }
-
-    @ViewBuilder
-    private var rightActionButton: some View {
-        switch currentPage {
-        case .live:
-            Button {
-                Task { await vm.triggerStill() }
-            } label: {
-                bmpccStillIcon
-            }
-            .buttonStyle(.plain)
-        case .detection:
-            // Phase 4: Pi cam still — wired in Phase 4
-            Button { } label: {
-                Image(systemName: "camera")
-                    .font(.system(size: 22))
-                    .foregroundStyle(Color.white.opacity(0.25))
-            }
-            .buttonStyle(.plain)
-            .disabled(true)
-        case .still:
-            Color.clear
-        }
-    }
-
-    // Camera + bolt badge: distinguishes BMPCC still from Pi cam still
-    private var bmpccStillIcon: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Image(systemName: "camera")
-                .font(.system(size: 22))
-                .foregroundStyle(Color.white.opacity(0.5))
-            Image(systemName: "bolt.fill")
-                .font(.system(size: 7, weight: .bold))
-                .foregroundStyle(Theme.accent.opacity(0.85))
-                .offset(x: 3, y: 2)
-        }
+        .background(Theme.background)
     }
 
     // MARK: – Page indicator
@@ -327,7 +311,7 @@ struct CameraTabView: View {
                 } label: {
                     if page == currentPage {
                         Text(page.label)
-                            .font(.system(size: 8, weight: .semibold))
+                            .font(.system(size: 8, weight: .semibold, design: .monospaced))
                             .tracking(1.8)
                             .foregroundStyle(Theme.accent)
                             .padding(.horizontal, 6)
@@ -351,53 +335,228 @@ struct CameraTabView: View {
     }
 }
 
-// MARK: – LIVE info popover
+// MARK: – Shared operator control row (STILL + CAM)
 
-private struct LiveInfoPopover: View {
-    let isConnected: Bool
-    let lastPollAt:  Date
-    let streamURL:   String
+private struct OperatorControlRow<Indicator: View>: View {
+    let isOwner: Bool
+    let isRecording: Bool
+    let yoloLocked: Bool
+    let onRecord: () -> Void
+    let onCapture: () -> Void
+    @ViewBuilder let indicator: () -> Indicator
 
-    private static let timeFmt: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss"
-        f.timeZone = TimeZone(identifier: "America/Vancouver")
-        return f
-    }()
+    @State private var captureFlash          = false
+    @State private var showStopConfirmation  = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            infoRow(label: "STATUS",     value: isConnected ? "CONNECTED" : "DISCONNECTED",
-                    valueColor: isConnected ? Theme.accent : Theme.tertiary)
-            HRule()
-            infoRow(label: "LAST POLL",  value: Self.timeFmt.string(from: lastPollAt))
-            HRule()
-            infoRow(label: "UPTIME",     value: "—")
-            HRule()
-            infoRow(label: "STREAM URL", value: streamURL)
-        }
-        .padding(14)
-        .background(Theme.cardBackground)
-        .frame(width: 260)
-    }
+        ZStack {
+            // 4-column grid matching the tab bar's equal layout
+            HStack(spacing: 0) {
+                Group {
+                    if isOwner {
+                        Button {
+                            if isRecording && yoloLocked {
+                                showStopConfirmation = true
+                            } else {
+                                onRecord()
+                            }
+                        } label: {
+                            Image(systemName: isRecording ? "stop.circle.fill" : "record.circle")
+                                .symbolRenderingMode(.monochrome)
+                                .font(.system(size: 26))
+                                .foregroundStyle(isRecording ? Theme.recordingRed : Theme.tertiary)
+                        }
+                        .buttonStyle(.plain)
+                        .confirmationDialog(
+                            "YOLO-triggered recording active.",
+                            isPresented: $showStopConfirmation,
+                            titleVisibility: .visible
+                        ) {
+                            Button("Stop Recording", role: .destructive) { onRecord() }
+                            Button("Cancel", role: .cancel) {}
+                        }
+                    } else {
+                        Color.clear
+                    }
+                }
+                .frame(maxWidth: .infinity)
 
-    private func infoRow(label: String, value: String,
-                         valueColor: Color = .white) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label)
-                .font(Theme.dataLabel(size: 9))
-                .tracking(Theme.labelTracking)
-                .foregroundStyle(Theme.tertiary)
-            Text(value)
-                .font(.system(size: 11, weight: .regular, design: .monospaced))
-                .foregroundStyle(valueColor)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
+                Color.clear.frame(maxWidth: .infinity)
+                Color.clear.frame(maxWidth: .infinity)
+
+                Group {
+                    if isOwner {
+                        Button {
+                            withAnimation(.easeOut(duration: 0.08)) { captureFlash = true }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                withAnimation(.easeIn(duration: 0.08)) { captureFlash = false }
+                            }
+                            onCapture()
+                        } label: {
+                            Image(systemName: "camera.aperture")
+                                .font(.system(size: 24))
+                                .foregroundStyle(captureFlash ? Theme.accent : Color.white.opacity(0.5))
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Color.clear
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+
+            indicator()
         }
+        .frame(height: 44)
+        .padding(.bottom, 10)
+        .background(Theme.background)
     }
 }
 
-// MARK: – YOLO info popover (used by detectionHudStrip)
+// MARK: – ISO popover
+
+private struct ISOPopover: View {
+    @EnvironmentObject var vm: DataViewModel
+    private let isoStops = [100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("ISO")
+                    .font(Theme.dataLabel(size: 9))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(Theme.tertiary)
+                Spacer()
+                Text("\(vm.iso)")
+                    .font(.system(size: 13, weight: .regular, design: .monospaced))
+                    .foregroundStyle(.white)
+            }
+            Slider(
+                value: Binding(
+                    get: { Double(isoStops.firstIndex(of: vm.iso) ?? 2) },
+                    set: { vm.iso = isoStops[Int($0.rounded())] }
+                ),
+                in: 0...Double(isoStops.count - 1),
+                step: 1
+            ) { editing in
+                if !editing { Task { await vm.setISO(vm.iso) } }
+            }
+            .tint(Theme.accent)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.cardBackground)
+    }
+}
+
+// MARK: – WB popover
+
+private struct WBPopover: View {
+    @EnvironmentObject var vm: DataViewModel
+    private let presets: [(String, Int)] = [
+        ("TUNG", 3200), ("FLUO", 4000), ("SUN", 5600), ("CLOUD", 6500), ("SHADE", 7500)
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("WHITE BALANCE")
+                    .font(Theme.dataLabel(size: 9))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(Theme.tertiary)
+                Spacer()
+                Text("\(vm.wbKelvin) K")
+                    .font(.system(size: 13, weight: .regular, design: .monospaced))
+                    .foregroundStyle(.white)
+            }
+            Slider(
+                value: Binding(
+                    get: { Double(vm.wbKelvin) },
+                    set: { vm.wbKelvin = Int($0.rounded()) }
+                ),
+                in: 2500...10000,
+                step: 100
+            ) { editing in
+                if !editing { Task { await vm.setWB(vm.wbKelvin) } }
+            }
+            .tint(Theme.accent)
+
+            HStack(spacing: 0) {
+                ForEach(presets, id: \.0) { name, kelvin in
+                    Button(name) {
+                        vm.wbKelvin = kelvin
+                        Task { await vm.setWB(kelvin) }
+                    }
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .tracking(1.0)
+                    .foregroundStyle(vm.wbKelvin == kelvin ? Theme.accent : Theme.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 2)
+                            .stroke(
+                                vm.wbKelvin == kelvin ? Theme.accent.opacity(0.5) : Theme.rule,
+                                lineWidth: Theme.ruleWidth
+                            )
+                    )
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.cardBackground)
+    }
+}
+
+// MARK: – Shutter popover
+
+private struct ShutterPopover: View {
+    @EnvironmentObject var vm: DataViewModel
+    private let options: [Double] = [90, 120, 172.8, 180]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("SHUTTER ANGLE")
+                .font(Theme.dataLabel(size: 9))
+                .tracking(Theme.labelTracking)
+                .foregroundStyle(Theme.tertiary)
+
+            HStack(spacing: 0) {
+                ForEach(options, id: \.self) { angle in
+                    Button(angleLabel(angle)) {
+                        vm.shutterAngle = angle
+                        Task { await vm.setShutterAngle(angle) }
+                    }
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(vm.shutterAngle == angle ? Theme.accent : Theme.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 2)
+                            .stroke(
+                                vm.shutterAngle == angle ? Theme.accent.opacity(0.5) : Theme.rule,
+                                lineWidth: Theme.ruleWidth
+                            )
+                    )
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.cardBackground)
+    }
+
+    private func angleLabel(_ a: Double) -> String {
+        a.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(a))°" : String(format: "%.1f°", a)
+    }
+}
+
+// MARK: – YOLO info popover
 
 struct YoloInfoPopover: View {
     let simulationMode: Bool

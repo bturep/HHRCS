@@ -31,6 +31,13 @@ struct ControlTabView: View {
         }
     }
 
+    // MARK: – ISO / WB constants
+
+    private let isoStops   = [100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600]
+    private let wbPresets: [(String, Int)] = [
+        ("TUNG", 3200), ("FLUO", 4000), ("SUN", 5600), ("CLOUD", 6500), ("SHADE", 7500)
+    ]
+
     // MARK: – Control Panel
 
     private var controlPanel: some View {
@@ -40,28 +47,9 @@ struct ControlTabView: View {
                 SectionCard(title: "CONFIGURATION") {
                     VStack(spacing: 12) {
 
-                        pickerRow(label: "ND FILTER") {
-                            Picker("ND", selection: $vm.ndPosition) {
-                                Text("CLEAR").tag(0)
-                                Text("ND2").tag(2)
-                                Text("ND4").tag(4)
-                                Text("ND6").tag(6)
-                            }
-                            .pickerStyle(.segmented)
-                            .onChange(of: vm.ndPosition) { _, val in Task { await vm.setND(val) } }
-                        }
-
+                        isoRow
                         HRule()
-
-                        pickerRow(label: "ISO") {
-                            Picker("ISO", selection: $vm.iso) {
-                                Text("400").tag(400)
-                                Text("3200").tag(3200)
-                            }
-                            .pickerStyle(.segmented)
-                            .onChange(of: vm.iso) { _, val in Task { await vm.setISO(val) } }
-                        }
-
+                        wbRow
                         HRule()
 
                         pickerRow(label: "SHUTTER ANGLE") {
@@ -73,31 +61,6 @@ struct ControlTabView: View {
                             }
                             .pickerStyle(.segmented)
                             .onChange(of: vm.shutterAngle) { _, val in Task { await vm.setShutterAngle(val) } }
-                        }
-
-                        HRule()
-
-                        pickerRow(label: "WHITE BALANCE") {
-                            Picker("WB", selection: $vm.wbKelvin) {
-                                Text("3200K").tag(3200)
-                                Text("4500K").tag(4500)
-                                Text("5600K").tag(5600)
-                                Text("AUTO").tag(0)
-                            }
-                            .pickerStyle(.segmented)
-                            .onChange(of: vm.wbKelvin) { _, val in Task { await vm.setWB(val) } }
-                        }
-
-                        HRule()
-
-                        pickerRow(label: "FRAME RATE") {
-                            Picker("FPS", selection: $vm.fps) {
-                                Text("24").tag(24)
-                                Text("25").tag(25)
-                                Text("30").tag(30)
-                            }
-                            .pickerStyle(.segmented)
-                            .onChange(of: vm.fps) { _, val in Task { await vm.setFPS(val) } }
                         }
                     }
                 }
@@ -119,6 +82,85 @@ struct ControlTabView: View {
             .padding(.bottom, 20)
         }
         .background(Theme.background)
+    }
+
+    // MARK: – ISO slider row
+
+    private var isoRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("ISO")
+                    .font(Theme.dataLabel(size: 9))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(Theme.secondary)
+                Spacer()
+                Text("\(vm.iso)")
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(.white)
+            }
+            Slider(
+                value: Binding(
+                    get: { Double(isoStops.firstIndex(of: vm.iso) ?? 3) },
+                    set: { vm.iso = isoStops[Int($0.rounded())] }
+                ),
+                in: 0...Double(isoStops.count - 1),
+                step: 1
+            ) { editing in
+                if !editing { Task { await vm.setISO(vm.iso) } }
+            }
+            .tint(Theme.accent)
+        }
+    }
+
+    // MARK: – White balance slider + presets row
+
+    private var wbRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("WHITE BALANCE")
+                    .font(Theme.dataLabel(size: 9))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(Theme.secondary)
+                Spacer()
+                Text("\(vm.wbKelvin) K")
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(.white)
+            }
+            Slider(
+                value: Binding(
+                    get: { Double(vm.wbKelvin) },
+                    set: { vm.wbKelvin = Int($0.rounded()) }
+                ),
+                in: 2500...10000,
+                step: 100
+            ) { editing in
+                if !editing { Task { await vm.setWB(vm.wbKelvin) } }
+            }
+            .tint(Theme.accent)
+
+            HStack(spacing: 6) {
+                ForEach(wbPresets, id: \.0) { name, kelvin in
+                    Button(name) {
+                        vm.wbKelvin = kelvin
+                        Task { await vm.setWB(kelvin) }
+                    }
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .tracking(1.0)
+                    .foregroundStyle(vm.wbKelvin == kelvin ? Theme.accent : Theme.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 2)
+                            .stroke(
+                                vm.wbKelvin == kelvin ? Theme.accent.opacity(0.5) : Theme.rule,
+                                lineWidth: Theme.ruleWidth
+                            )
+                    )
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+            }
+        }
     }
 
     private func pickerRow<P: View>(label: String, @ViewBuilder picker: () -> P) -> some View {

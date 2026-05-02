@@ -4,54 +4,33 @@ struct StillFrameView: View {
     @EnvironmentObject var vm: DataViewModel
 
     @State private var showFullscreen = false
-
-    private static let timeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss"
-        f.timeZone = TimeZone(identifier: "America/Vancouver")
-        return f
-    }()
+    @State private var hasLoaded      = false
 
     private var capturedImage: PlatformImage? {
         guard let data = vm.lastStillData else { return nil }
         return PlatformImage(data: data)
     }
 
-    private var capturedAt: Date {
-        vm.lastStillCapturedAt ?? Date().addingTimeInterval(-840)
-    }
-
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack {
             Theme.background
 
-            if let image = capturedImage {
+            if vm.isCapturingStill {
+                capturingView
+            } else if let image = capturedImage {
                 Image(platformImage: image)
                     .resizable()
                     .scaledToFit()
                     .transition(.opacity)
                     .onTapGesture { showFullscreen = true }
-                    // Leave room at bottom for capture bar
-                    .padding(.bottom, 76)
-
-                VStack(spacing: 0) {
-                    Spacer()
-                    Text(Self.timeFormatter.string(from: capturedAt))
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .tracking(1.2)
-                        .foregroundStyle(Theme.tertiary.opacity(0.6))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 6)
-                    captureBar
-                }
             } else {
                 emptyState
-                VStack(spacing: 0) {
-                    Spacer()
-                    captureBar
-                }
             }
+        }
+        .onAppear {
+            guard !hasLoaded else { return }
+            hasLoaded = true
+            Task { await vm.captureStill() }
         }
         #if os(iOS)
         .fullScreenCover(isPresented: $showFullscreen) {
@@ -68,77 +47,45 @@ struct StillFrameView: View {
         #endif
     }
 
+    // MARK: – Capturing indicator
+
+    private var capturingView: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            ProgressView()
+                .tint(Theme.accent)
+                .scaleEffect(1.1)
+            Text("CAPTURING")
+                .font(Theme.dataLabel(size: 9))
+                .tracking(Theme.labelTracking)
+                .foregroundStyle(Theme.tertiary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     // MARK: – Empty state
-    // Whole area styled as an invitation to capture; tap triggers BMPCC still.
 
     private var emptyState: some View {
-        Button {
-            Task { await vm.triggerStill() }
-        } label: {
-            VStack(spacing: 16) {
-                Spacer()
-                ZStack {
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Theme.accent.opacity(0.25), lineWidth: 1)
-                        .frame(width: 72, height: 72)
-                    Image(systemName: "camera")
-                        .font(.system(size: 34, weight: .thin))
-                        .foregroundStyle(Theme.accent.opacity(0.6))
-                }
-                Text("NO STILL CAPTURED")
-                    .font(Theme.dataLabel())
-                    .tracking(Theme.labelTracking)
-                    .foregroundStyle(Theme.tertiary)
-                Text("tap to capture BMPCC still")
-                    .font(Theme.statusCaption())
-                    .foregroundStyle(Theme.tertiary.opacity(0.6))
-                Spacer()
+        VStack(spacing: 16) {
+            Spacer()
+            ZStack {
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Theme.accent.opacity(0.25), lineWidth: 1)
+                    .frame(width: 72, height: 72)
+                Image(systemName: "camera")
+                    .font(.system(size: 34, weight: .thin))
+                    .foregroundStyle(Theme.accent.opacity(0.6))
             }
-            .frame(maxWidth: .infinity)
+            Text("NO STILL CAPTURED")
+                .font(Theme.dataLabel())
+                .tracking(Theme.labelTracking)
+                .foregroundStyle(Theme.tertiary)
+            Spacer()
         }
-        .buttonStyle(.plain)
-        // Reserve space so empty state doesn't bleed into capture bar
-        .padding(.bottom, 76)
+        .frame(maxWidth: .infinity)
     }
 
-    // MARK: – Capture bar
-    // Two distinct actions, side by side, anchored to the bottom.
-
-    private var captureBar: some View {
-        HStack(spacing: 1) {
-            captureButton(
-                label: "BMPCC STILL",
-                icon:  "bolt.fill",
-                action: { Task { await vm.triggerStill() } }
-            )
-
-            captureButton(
-                label: "PI CAM STILL",
-                icon:  "camera",
-                // Phase 4: Pi cam still trigger wired here
-                action: { }
-            )
-            .opacity(0.4)  // dimmed until Phase 4 wires it up
-        }
-        .frame(height: 48)
-    }
-
-    private func captureButton(label: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .medium))
-                Text(label)
-                    .font(Theme.dataLabel(size: 10))
-                    .tracking(Theme.labelTracking)
-            }
-            .foregroundStyle(Color.white.opacity(0.6))
-            .frame(maxWidth: .infinity)
-            .frame(height: 48)
-            .background(Theme.cardBackground)
-        }
-        .buttonStyle(.plain)
-    }
 }
 
 // MARK: – Fullscreen viewer with pinch-to-zoom + pan
@@ -154,7 +101,7 @@ struct FullscreenImageView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Theme.background.ignoresSafeArea()
 
             Image(platformImage: image)
                 .resizable()
@@ -166,7 +113,7 @@ struct FullscreenImageView: View {
                         .onChanged { v in
                             scale = max(1.0, lastScale * v)
                         }
-                        .onEnded { v in
+                        .onEnded { _ in
                             lastScale = scale
                             if scale < 1.0 {
                                 withAnimation(.spring()) {

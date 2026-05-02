@@ -2,6 +2,13 @@ import Foundation
 import Combine
 import SwiftUI
 
+struct Detection: Identifiable {
+    let id         = UUID()
+    let label:      String
+    let confidence: Double
+    let box:        CGRect   // normalized 0–1 (x, y = top-left, w, h)
+}
+
 enum TriggerState: Equatable {
     case holding
     case active
@@ -12,13 +19,13 @@ enum TriggerState: Equatable {
 final class DataViewModel: ObservableObject {
 
     // MARK: – Light
-    @Published var lux:        Double = 1240
-    @Published var ev:         Double = 10.2
-    @Published var ndPosition: Int    = 4
-    @Published var iso:        Int    = 400
+    @Published var lux: Double = 1240
+    @Published var ev:  Double = 10.2
+    @Published var iso: Int    = 400
 
     // MARK: – Camera
-    @Published var isRecording:      Bool   = true
+    @Published var isRecording:      Bool   = false  // BMPCC via ESP32
+    @Published var isPiCamRecording: Bool   = false  // Pi Camera Module 3
     @Published var recordingSeconds: Int    = 7243
     @Published var ssdRemainingGB:   Double = 312.4
     @Published var ssdTotalGB:       Double = 480.0
@@ -49,6 +56,12 @@ final class DataViewModel: ObservableObject {
     @Published var lastStillData:        Data? = nil
     @Published var lastStillCapturedAt:  Date? = nil
     @Published var stills:               [CapturedStill] = []
+    @Published var isCapturingStill:     Bool  = false
+
+    // MARK: – YOLO / machine state (from Pi /status)
+    @Published var yoloLocked:   Bool       = false
+    @Published var machineState: String     = "IDLE"
+    @Published var detections:   [Detection] = []
 
     // MARK: – Connectivity
     @Published var lastPollAt: Date = Date()
@@ -56,10 +69,18 @@ final class DataViewModel: ObservableObject {
     // MARK: – Camera controls
     @Published var shutterAngle: Double = 180.0
     @Published var wbKelvin:     Int    = 5600
-    @Published var fps:          Int    = 24
 
     // MARK: – AI Agent Log
     @Published var aiLogEntries: [AILogEntry] = []
+
+    // MARK: – Event Log (live from Pi /log)
+    @Published var eventLog:       [EventLogLine]  = []
+    @Published var eventLogFilter: EventLogFilter  = .all
+
+    var filteredEventLog: [EventLogLine] {
+        guard eventLogFilter != .all else { return eventLog }
+        return eventLog.filter { $0.label == eventLogFilter.rawValue }
+    }
 
     // MARK: – Weather & Astro
     @Published var weather:      WeatherData?
@@ -74,16 +95,34 @@ final class DataViewModel: ObservableObject {
     @Published var healthYoloRunning:     Bool    = false
     @Published var healthYoloSimMode:     Bool    = true
     @Published var healthIsRecording:     Bool    = false
-    @Published var healthSsdMounted:      Bool    = false
-    @Published var healthSsdFreePct:      Double  = 0
-    @Published var healthLastPollAt:      Date?   = nil
-    @Published var healthLastError:       String? = nil
+    @Published var healthEsp32BleState:   String  = "—"
+    @Published var healthSsdMounted:            Bool    = false
+    @Published var healthSsdFreePct:            Double  = 0
+    @Published var healthDetectLastAgoSec:      Double? = nil
+    @Published var healthLastPollAt:            Date?   = nil
+    @Published var healthLastError:             String? = nil
+
+    // MARK: – Deployment
+    @Published var deploymentChangeCount: Int = 0
+
+    func resetForNewDeployment() {
+        eventLog     = []
+        aiLogEntries = []
+        deploymentChangeCount += 1
+    }
 
     // MARK: – Private
-    private var simTask:     Task<Void, Never>?
-    private var trigTask:    Task<Void, Never>?
-    private var healthTask:  Task<Void, Never>?
+    private var simTask:          Task<Void, Never>?
+    private var trigTask:         Task<Void, Never>?
+    private var healthTask:       Task<Void, Never>?
+    private var logTask:          Task<Void, Never>?
+    private var notificationTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
+
+    // Cold-start guard: don't let a stale Pi "recording: true" make the button
+    // orange on first launch. isRecording can only go true via the poll after
+    // we've first received at least one "not recording" response.
+    private var seenNotRecording = false
 
     private let detectionClasses = ["deer", "fox", "raccoon", "coyote",
                                     "bird", "squirrel", "cat", "person"]
@@ -99,11 +138,16 @@ final class DataViewModel: ObservableObject {
         startSimulation()
         startTriggerCycle()
         startSMPTETimer()
-        aiLogEntries = AILogEntry.simulatedEntries()
+        startAutoStillTimer()
+        if AppSettings.shared.piServerURL.isEmpty {
+            aiLogEntries = AILogEntry.simulatedEntries()
+        }
         stills = CapturedStill.simulatedEntries()
         Task { await refreshWeather() }
         Task { await refreshAstro() }
         startHealthPolling()
+        startLogPolling()
+        startNotificationPolling()
 
         AppSettings.shared.$latitude
             .combineLatest(AppSettings.shared.$longitude)
@@ -121,6 +165,8 @@ final class DataViewModel: ObservableObject {
         simTask?.cancel()
         trigTask?.cancel()
         healthTask?.cancel()
+        logTask?.cancel()
+        notificationTask?.cancel()
     }
 
     func refreshWeather() async {
@@ -143,33 +189,71 @@ final class DataViewModel: ObservableObject {
         }
     }
 
+    // MARK: – Auto-still (checks every 60s, fires when AppSettings.thirtyMinStills && 30min elapsed)
+
+    private func startAutoStillTimer() {
+        Timer.publish(every: 60, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                Task { await self.checkAutoStill() }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func checkAutoStill() async {
+        guard AppSettings.shared.thirtyMinStills else { return }
+        guard let last = lastStillCapturedAt else { return }
+        guard Date().timeIntervalSince(last) >= 1800 else { return }
+        guard !isCapturingStill else { return }
+        await captureStill()
+    }
+
     // MARK: – Health polling (every 5s, real Pi regardless of sim mode)
 
     private struct HealthPoll: Decodable {
-        let esp32Connected:      Bool?
+        struct DetectionItem: Decodable {
+            let label:      String
+            let confidence: Double
+            let box:        [Double]   // [x, y, w, h] normalized 0–1
+        }
+
+        let esp32Connected:       Bool?
         let esp32BridgeReachable: Bool?
-        let yoloRunning:         Bool?
-        let yoloSimMode:         Bool?
-        let ssdMounted:          Bool?
-        let ssdFreePct:          Double?
-        let recording:           Bool?
+        let esp32BleState:        String?
+        let yoloRunning:          Bool?
+        let yoloSimMode:          Bool?
+        let ssdMounted:                    Bool?
+        let ssdFreePct:                    Double?
+        let detectorLastInferenceAgoSec:   Double?
+        let recording:                     Bool?
+        let machineState:         String?
+        let detections:           [DetectionItem]?
 
         enum CodingKeys: String, CodingKey {
             case esp32Connected       = "esp32_connected"
             case esp32BridgeReachable = "esp32_bridge_reachable"
+            case esp32BleState        = "esp32_ble_state"
             case yoloRunning          = "yolo_running"
             case yoloSimMode          = "yolo_sim_mode"
-            case ssdMounted           = "ssd_mounted"
-            case ssdFreePct           = "ssd_free_pct"
+            case ssdMounted                  = "ssd_mounted"
+            case ssdFreePct                  = "ssd_free_pct"
+            case detectorLastInferenceAgoSec = "detector_last_inference_ago_seconds"
             case recording
+            case machineState         = "machine_state"
+            case detections
         }
+    }
+
+    func refreshHealth() async {
+        await pollHealth()
     }
 
     private func startHealthPolling() {
         healthTask = Task {
             while !Task.isCancelled {
                 await pollHealth()
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
     }
@@ -185,21 +269,149 @@ final class DataViewModel: ObservableObject {
             var req = URLRequest(url: url)
             req.timeoutInterval = 4
             let (data, _) = try await URLSession.shared.data(for: req)
+            UserDefaults.standard.set(data, forKey: "lastKnownStatus")
             let poll = try JSONDecoder().decode(HealthPoll.self, from: data)
             healthPiReachable     = true
             healthBridgeReachable = poll.esp32BridgeReachable ?? false
+            let wasConnected      = healthBleConnected
             healthBleConnected    = poll.esp32Connected       ?? false
+            healthEsp32BleState   = poll.esp32BleState        ?? "—"
             healthYoloRunning     = poll.yoloRunning          ?? false
             healthYoloSimMode     = poll.yoloSimMode          ?? true
             healthIsRecording     = poll.recording            ?? false
-            healthSsdMounted      = poll.ssdMounted           ?? false
-            healthSsdFreePct      = poll.ssdFreePct           ?? 0
-            healthLastPollAt      = Date()
+            let bleUp             = poll.esp32Connected       ?? false
+            // Re-arm the cold-start guard on every BLE reconnect so a stale
+            // recording:true from the Pi can't immediately light the button.
+            if bleUp && !wasConnected { seenNotRecording = false }
+            let piRecording       = (poll.recording ?? false) && bleUp
+            if !piRecording { seenNotRecording = true }
+            isRecording           = seenNotRecording ? piRecording : false
+            healthSsdMounted         = poll.ssdMounted                  ?? false
+            healthSsdFreePct         = poll.ssdFreePct                  ?? 0
+            healthDetectLastAgoSec   = poll.detectorLastInferenceAgoSec
+            healthLastPollAt         = Date()
             healthLastError       = nil
+
+            // Machine state & YOLO lock
+            let ms = poll.machineState ?? "IDLE"
+            machineState = ms
+            yoloLocked   = (ms == "ACTIVE") && (poll.recording ?? false)
+
+            // Real detections from Pi
+            if let items = poll.detections {
+                detections = items.compactMap { item in
+                    guard item.box.count == 4 else { return nil }
+                    return Detection(
+                        label:      item.label,
+                        confidence: item.confidence,
+                        box: CGRect(x: item.box[0], y: item.box[1],
+                                    width: item.box[2], height: item.box[3])
+                    )
+                }
+            } else {
+                detections = []
+            }
         } catch {
             healthPiReachable = false
             healthLastError   = error.localizedDescription
         }
+    }
+
+    // MARK: – Notification polling (every 2s, parallel to health)
+
+    private func startNotificationPolling() {
+        notificationTask = Task {
+            while !Task.isCancelled {
+                await NotificationPoller.shared.pollAndSurface()
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
+    }
+
+    // MARK: – Event log + agent log polling (every 3s)
+
+    private func startLogPolling() {
+        logTask = Task {
+            while !Task.isCancelled {
+                await pollEventLog()
+                await pollAgentLog()
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+        }
+    }
+
+    func refreshEventLog() async {
+        await pollEventLog()
+    }
+
+    private func pollEventLog() async {
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty, let url = URL(string: base + "/log?window=300") else { return }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 5
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let text = String(data: data, encoding: .utf8) else { return }
+        let lines = text
+            .components(separatedBy: "\n")
+            .filter { !$0.isEmpty }
+            .compactMap { EventLogLine.parse($0) }
+            .reversed()
+        eventLog = Array(lines.prefix(200))
+    }
+
+    private struct AgentLogItem: Decodable {
+        let type:      String
+        let content:   String
+        let query:     String?
+        let source:    String?
+        let timestamp: String?
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case content = "response"
+            case query
+            case source
+            case timestamp
+        }
+    }
+
+    private static let agentLogDateFmt: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static let agentLogDateFmtNoFrac: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private func pollAgentLog() async {
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty, let url = URL(string: base + "/agent-log?limit=50") else { return }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 5
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let items = try? JSONDecoder().decode([AgentLogItem].self, from: data) else { return }
+        let parsed: [AILogEntry] = items.map { item in
+            let ts: Date = {
+                guard let s = item.timestamp else { return Date() }
+                return Self.agentLogDateFmt.date(from: s)
+                    ?? Self.agentLogDateFmtNoFrac.date(from: s)
+                    ?? Date()
+            }()
+            return AILogEntry(
+                id:        UUID(),
+                timestamp: ts,
+                type:      item.type,
+                source:    item.source ?? "pi_agent",
+                content:   item.content,
+                query:     item.query,
+                data:      nil
+            )
+        }
+        aiLogEntries = parsed
     }
 
     // MARK: – Simulation
@@ -312,27 +524,69 @@ final class DataViewModel: ObservableObject {
         return ((ssdTotalGB - ssdRemainingGB) / ssdTotalGB) * 100
     }
 
-    // MARK: – Pi commands
-    func triggerStill() async {
-        await sendPiCommand("/still/trigger")
-        await captureAndStoreSnapshot(triggerType: "manual")
+    var hasSystemAlert: Bool {
+        !healthPiReachable || !healthBridgeReachable || healthEsp32BleState != "Connected"
     }
 
-    func toggleRecord() async {
-        await sendPiCommand("/record/toggle")
-        isRecording.toggle()
+    // MARK: – Pi commands
+
+    // BMPCC record via ESP32 bridge
+    func toggleBmpccRecord() async {
+        print("[REC] toggleBmpccRecord — isRecording=\(isRecording), bleConnected=\(healthBleConnected), bleState=\(healthEsp32BleState)")
         if isRecording {
+            print("[REC] → STOP")
+            await sendPiCommand("/control/record/stop")
+            isRecording = false
+        } else {
+            print("[REC] → START")
+            await sendPiCommand("/control/record/start")
+            isRecording = true
             await captureAndStoreSnapshot(triggerType: "manual")
         }
+        print("[REC] done — isRecording now \(isRecording)")
     }
 
-    func setND(_ value: Int) async {
-        await sendPiCommand("/nd/\(value)")
-        ndPosition = value
+    // Pi Camera Module 3 record — visual-only toggle, no Pi endpoint yet
+    func togglePiCamRecord() {
+        isPiCamRecording.toggle()
+    }
+
+    // BMPCC still via ESP32 bridge
+    func captureBmpccStill() async {
+        await sendPiCommand("/control/still")
+    }
+
+    func captureStill() async {
+        guard !isCapturingStill else { return }
+        isCapturingStill = true
+        let piBase = AppSettings.shared.piServerURL
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        if !piBase.isEmpty, let url = URL(string: piBase + "/still/trigger") {
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.timeoutInterval = 5
+            _ = try? await URLSession.shared.data(for: req)
+        }
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        if !piBase.isEmpty {
+            for path in ["/stills/latest", "/snapshot"] {
+                guard let url = URL(string: piBase + path) else { continue }
+                if let (data, resp) = try? await URLSession.shared.data(from: url),
+                   let http = resp as? HTTPURLResponse,
+                   http.statusCode == 200,
+                   !data.isEmpty {
+                    lastStillData       = data
+                    lastStillCapturedAt = Date()
+                    isCapturingStill    = false
+                    return
+                }
+            }
+        }
+        isCapturingStill = false
     }
 
     func setISO(_ value: Int) async {
-        await sendPiCommand("/iso/\(value)")
+        await sendPiCommandJSON("/control/iso", body: ["iso": value])
         iso = value
     }
 
@@ -343,13 +597,7 @@ final class DataViewModel: ObservableObject {
 
     func setWB(_ kelvin: Int) async {
         wbKelvin = kelvin
-        guard kelvin > 0 else { return }
         await sendPiCommandJSON("/control/wb", body: ["kelvin": kelvin])
-    }
-
-    func setFPS(_ newFPS: Int) async {
-        fps = newFPS
-        await sendPiCommandJSON("/control/fps", body: ["fps": newFPS])
     }
 
     private func captureAndStoreSnapshot(triggerType: String) async {
@@ -371,21 +619,38 @@ final class DataViewModel: ObservableObject {
 
     private func sendPiCommand(_ path: String) async {
         let base = AppSettings.shared.piServerURL
-        guard !base.isEmpty, let url = URL(string: base + path) else { return }
+        guard !base.isEmpty, let url = URL(string: base + path) else {
+            print("[Pi] \(path) — piServerURL not configured")
+            return
+        }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.timeoutInterval = 5
-        _ = try? await URLSession.shared.data(for: req)
+        if let (data, resp) = try? await URLSession.shared.data(for: req) {
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            let body = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "<binary>"
+            print("[Pi] POST \(path) → HTTP \(code) | \(body)")
+        } else {
+            print("[Pi] POST \(path) — network error / timeout")
+        }
     }
 
     private func sendPiCommandJSON(_ path: String, body: [String: Any]) async {
         let base = AppSettings.shared.piServerURL
-        guard !base.isEmpty, let url = URL(string: base + path) else { return }
+        guard !base.isEmpty, let url = URL(string: base + path) else {
+            print("[Pi] \(path) \(body) — piServerURL not configured")
+            return
+        }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         req.timeoutInterval = 5
-        _ = try? await URLSession.shared.data(for: req)
+        if let (_, resp) = try? await URLSession.shared.data(for: req) {
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            print("[Pi] POST \(path) \(body) → HTTP \(code)")
+        } else {
+            print("[Pi] POST \(path) \(body) — network error")
+        }
     }
 }

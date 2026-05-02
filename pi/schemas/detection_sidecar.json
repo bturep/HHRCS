@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hhrcs.local/schemas/detection_sidecar.json",
+  "title": "HHRCS Detection Sidecar",
+  "description": "Per-clip sidecar written by detector.py at trigger time. classification field is null on write; populated by speciesnet_pass.py on Mac.",
+  "type": "object",
+  "required": ["clip_id", "session_id", "deployment", "started_at", "trigger", "detections", "classification"],
+  "properties": {
+    "clip_id": {
+      "type": "string",
+      "description": "Unique clip identifier, format hhrcs_YYYYMMDD_HHMMSS"
+    },
+    "clip_path": {
+      "type": ["string", "null"],
+      "description": "Absolute path to the Pi camera H264/MP4 recording. Null until recording is confirmed written."
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Recording session identifier, matches clip_id at trigger time"
+    },
+    "deployment": {
+      "type": "object",
+      "required": ["name", "lat", "lon"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "const": "HUNTER_HOUSE_NORTH_MEADOW"
+        },
+        "lat": {
+          "type": "number",
+          "description": "WGS-84 latitude"
+        },
+        "lon": {
+          "type": "number",
+          "description": "WGS-84 longitude"
+        }
+      }
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp when the first trigger detection fired"
+    },
+    "ended_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp when the detector session ended. Null if session still active."
+    },
+    "trigger": {
+      "type": "object",
+      "required": ["source", "model_version", "confidence", "category", "bbox", "frame_timestamp"],
+      "description": "The single detection that crossed threshold and started recording",
+      "properties": {
+        "source": {
+          "type": "string",
+          "const": "megadetector",
+          "description": "Always megadetector for Pi-side triggers"
+        },
+        "model_version": {
+          "type": "string",
+          "examples": ["md_v1000_spruce", "md_v5a"],
+          "description": "Identifier matching the ONNX file used"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "category": {
+          "type": "string",
+          "enum": ["animal", "person", "vehicle"],
+          "description": "MegaDetector category that triggered recording"
+        },
+        "bbox": {
+          "type": "array",
+          "description": "Normalized [x1, y1, x2, y2] in original frame coordinates",
+          "items": {"type": "number", "minimum": 0, "maximum": 1},
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "frame_timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO-8601 UTC timestamp of the frame in which the trigger was detected"
+        }
+      }
+    },
+    "detections": {
+      "type": "array",
+      "description": "Per-frame detection records accumulated across the clip duration",
+      "items": {
+        "type": "object",
+        "required": ["timestamp", "category", "confidence", "bbox"],
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["animal", "person", "vehicle"]
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "bbox": {
+            "type": "array",
+            "items": {"type": "number", "minimum": 0, "maximum": 1},
+            "minItems": 4,
+            "maxItems": 4
+          }
+        }
+      }
+    },
+    "classification": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["species", "common_name", "confidence", "taxonomic_level", "prediction_source", "model_version", "classified_at"],
+          "description": "Populated by speciesnet_pass.py — never written by the Pi",
+          "properties": {
+            "species": {
+              "type": "string",
+              "description": "Binomial or higher-rank taxon name at the level SpeciesNet returned (e.g. 'odocoileus hemionus' or 'cervidae')"
+            },
+            "common_name": {
+              "type": ["string", "null"],
+              "description": "English common name if available at the returned taxonomic level"
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "taxonomic_level": {
+              "type": "string",
+              "enum": ["species", "genus", "family", "order", "class", "phylum", "kingdom", "unknown"],
+              "description": "Taxonomic rank of the returned prediction. Stored at whatever level SpeciesNet returned — no forced species-level."
+            },
+            "prediction_source": {
+              "type": "string",
+              "description": "Component that produced prediction, from SpeciesNet output (e.g. 'ensemble', 'classifier', 'geofence')"
+            },
+            "model_version": {
+              "type": "string",
+              "description": "SpeciesNet model version string from output"
+            },
+            "classified_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "ISO-8601 UTC timestamp when speciesnet_pass.py wrote this block"
+            },
+            "raw_predictions": {
+              "type": "array",
+              "description": "Top-N SpeciesNet predictions before geofencing, for audit",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {"type": "string"},
+                  "score": {"type": "number"}
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

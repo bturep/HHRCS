@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "state.transition",
+  "type": "object",
+  "required": ["from_state", "to_state", "reason"],
+  "properties": {
+    "from_state": { "type": "string", "enum": ["IDLE", "ACTIVE", "HOLDING", "COUNTDOWN", "RECORDING"] },
+    "to_state":   { "type": "string", "enum": ["IDLE", "ACTIVE", "HOLDING", "COUNTDOWN", "RECORDING"] },
+    "reason":     { "type": "string" }
+  },
+  "additionalProperties": true
+}

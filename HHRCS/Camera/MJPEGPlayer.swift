@@ -2,22 +2,36 @@ import Foundation
 import Combine
 
 // Streams an MJPEG URL, publishing decoded frames as PlatformImage.
-// Uses JPEG start/end markers (FF D8 ... FF D9) for reliable frame extraction.
-// If no frame is received within 5 seconds of connecting, switches to fallbackURL.
+// Decoded frames are placed in a capped queue; a display timer dequeues
+// and publishes them at frameInterval for smooth, consistent playback.
 final class MJPEGPlayer: NSObject, ObservableObject, URLSessionDataDelegate {
 
     @Published var currentFrame: PlatformImage?
     @Published var isConnected  = false
     @Published var statusText   = "CONNECTING"
 
-    private(set) var streamURL: URL
+    var streamURL: URL
     var fallbackURL: URL?
+
+    // Playback tuning — change without recompilation.
+    var frameInterval:   TimeInterval = 0.2   // display cadence (~5 fps)
+    var bufferCapacity:  Int          = 8     // max queued frames before dropping oldest
 
     private var session:    URLSession?
     private var dataTask:   URLSessionDataTask?
     private var buffer      = Data()
     private var retryCount  = 0
     private let maxRetries  = 5
+
+    // Serial queue — serializes all buffer + frameQueue access, preventing
+    // EXC_BAD_INSTRUCTION crashes from concurrent didReceive/extractFrames calls.
+    private let bufferQueue = DispatchQueue(label: "com.hhrcs.mjpeg.buffer")
+
+    // Decoded frame queue — all access on bufferQueue.
+    private var frameQueue: [PlatformImage] = []
+
+    // Display timer fires on bufferQueue so dequeue is serialized with enqueue.
+    private var displayTimer: DispatchSourceTimer?
 
     private var frameWatchdog: DispatchWorkItem?
     private var hasReceivedFrame = false
@@ -37,23 +51,42 @@ final class MJPEGPlayer: NSObject, ObservableObject, URLSessionDataDelegate {
         config.timeoutIntervalForRequest  = 30
         config.timeoutIntervalForResource = .infinity
         session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+        startDisplayTimer()
         connect()
     }
 
     func stop() {
+        displayTimer?.cancel()
+        displayTimer = nil
         frameWatchdog?.cancel()
         frameWatchdog = nil
         dataTask?.cancel()
         session?.invalidateAndCancel()
         session  = nil
         dataTask = nil
+        bufferQueue.async { self.frameQueue.removeAll() }
+    }
+
+    private func startDisplayTimer() {
+        let timer = DispatchSource.makeTimerSource(queue: bufferQueue)
+        timer.schedule(deadline: .now() + frameInterval,
+                       repeating: frameInterval,
+                       leeway: .milliseconds(10))
+        timer.setEventHandler { [weak self] in
+            guard let self, !self.frameQueue.isEmpty else { return }
+            let frame = self.frameQueue.removeFirst()
+            DispatchQueue.main.async { self.currentFrame = frame }
+        }
+        timer.resume()
+        displayTimer = timer
     }
 
     private func connect() {
-        buffer.removeAll()
+        bufferQueue.sync { buffer.removeAll() }
         hasReceivedFrame = false
         statusText = retryCount == 0 ? "CONNECTING" : "RECONNECTING (\(retryCount))"
         let url = usingFallback ? (fallbackURL ?? streamURL) : streamURL
+        print("[MJPEG] connect url=\(url) retry=\(retryCount)")
         var request = URLRequest(url: url)
         request.setValue("multipart/x-mixed-replace", forHTTPHeaderField: "Accept")
         dataTask = session?.dataTask(with: request)
@@ -75,7 +108,7 @@ final class MJPEGPlayer: NSObject, ObservableObject, URLSessionDataDelegate {
     private func switchToFallback() {
         usingFallback = true
         dataTask?.cancel()
-        buffer.removeAll()
+        bufferQueue.sync { buffer.removeAll() }
         DispatchQueue.main.async { self.statusText = "SWITCHING TO FALLBACK" }
         connect()
     }
@@ -98,6 +131,8 @@ final class MJPEGPlayer: NSObject, ObservableObject, URLSessionDataDelegate {
                     dataTask: URLSessionDataTask,
                     didReceive response: URLResponse,
                     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        print("[MJPEG] response HTTP \(code) from \(response.url?.absoluteString ?? "?")")
         DispatchQueue.main.async {
             self.isConnected = true
             self.statusText  = "LIVE"
@@ -109,8 +144,11 @@ final class MJPEGPlayer: NSObject, ObservableObject, URLSessionDataDelegate {
     func urlSession(_ session: URLSession,
                     dataTask: URLSessionDataTask,
                     didReceive data: Data) {
-        buffer.append(data)
-        extractFrames()
+        bufferQueue.async { [weak self] in
+            guard let self else { return }
+            self.buffer.append(data)
+            self.extractFrames()
+        }
     }
 
     func urlSession(_ session: URLSession,
@@ -124,7 +162,8 @@ final class MJPEGPlayer: NSObject, ObservableObject, URLSessionDataDelegate {
         }
     }
 
-    // MARK: – Frame extraction
+    // MARK: – Frame extraction (always called from bufferQueue)
+
     private func extractFrames() {
         while true {
             guard let soiRange = buffer.range(of: MJPEGPlayer.soi) else {
@@ -136,25 +175,26 @@ final class MJPEGPlayer: NSObject, ObservableObject, URLSessionDataDelegate {
             }
             guard buffer.count > 2,
                   let eoiRange = buffer.range(of: MJPEGPlayer.eoi, in: 2..<buffer.count) else {
-                if buffer.count > 10_000_000 { buffer.removeAll() }
+                if buffer.count > 50_000_000 { buffer.removeAll() }
                 return
             }
 
             let frameEnd = eoiRange.upperBound
             let jpegData = Data(buffer[0..<frameEnd])
+            buffer.removeSubrange(0..<frameEnd)
 
-            if let img = PlatformImage(data: jpegData) {
-                let captured = img
-                if !hasReceivedFrame {
-                    hasReceivedFrame = true
-                    frameWatchdog?.cancel()
-                }
-                DispatchQueue.main.async { [weak self] in
-                    self?.currentFrame = captured
-                }
+            guard let img = PlatformImage(data: jpegData) else { continue }
+
+            if !hasReceivedFrame {
+                hasReceivedFrame = true
+                frameWatchdog?.cancel()
             }
 
-            buffer.removeSubrange(0..<frameEnd)
+            // Enqueue for display; drop the oldest frame if at capacity.
+            if frameQueue.count >= bufferCapacity {
+                frameQueue.removeFirst()
+            }
+            frameQueue.append(img)
         }
     }
 }

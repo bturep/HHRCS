@@ -1,78 +1,52 @@
 import SwiftUI
 
-struct Detection: Identifiable {
-    let id    = UUID()
-    let label: String
-    let confidence: Double
-    let box:   CGRect   // normalized 0–1 (x, y = top-left)
-}
+struct DetectionOverlayView: View {
+    @EnvironmentObject var vm: DataViewModel
+    let player: MJPEGPlayer
 
-@MainActor
-final class DetectionSimulator: ObservableObject {
-    @Published var detections: [Detection] = []
-    private var task: Task<Void, Never>?
+    var body: some View {
+        ZStack {
+            MJPEGStreamView(player: player)
 
-    private let classes = ["deer", "fox", "raccoon", "coyote",
-                           "bird", "squirrel", "cat", "person"]
+            if !vm.detections.isEmpty {
+                GeometryReader { geo in
+                    let imgRect = scaledToFitRect(in: geo.size, aspect: 16.0 / 9.0)
+                    ForEach(vm.detections) { det in
+                        let r = CGRect(
+                            x:      imgRect.minX + det.box.minX * imgRect.width,
+                            y:      imgRect.minY + det.box.minY * imgRect.height,
+                            width:  det.box.width  * imgRect.width,
+                            height: det.box.height * imgRect.height
+                        )
+                        Rectangle()
+                            .stroke(Theme.accent, lineWidth: 1.5)
+                            .frame(width: r.width, height: r.height)
+                            .position(x: r.midX, y: r.midY)
 
-    init() { start() }
-    deinit { task?.cancel() }
-
-    private func start() {
-        task = Task {
-            while !Task.isCancelled {
-                let count = Int.random(in: 0...3)
-                withAnimation(.easeInOut(duration: 0.4)) {
-                    detections = (0..<count).map { _ in randomDetection() }
+                        Text("\(det.label.uppercased())  \(Int(det.confidence * 100))%")
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Theme.accent)
+                            .position(x: r.midX, y: r.minY - 8)
+                    }
                 }
-                let interval = Double.random(in: 2.5...5.0)
-                try? await Task.sleep(nanoseconds: UInt64(interval * 1e9))
             }
         }
     }
 
-    private func randomDetection() -> Detection {
-        let w = Double.random(in: 0.12...0.45)
-        let h = Double.random(in: 0.15...0.50)
-        let x = Double.random(in: 0.02...(0.98 - w))
-        let y = Double.random(in: 0.05...(0.90 - h))
-        return Detection(
-            label:      classes.randomElement()!,
-            confidence: Double.random(in: 0.72...0.99),
-            box:        CGRect(x: x, y: y, width: w, height: h)
-        )
-    }
-}
-
-struct DetectionOverlayView: View {
-    @StateObject private var sim = DetectionSimulator()
-
-    var body: some View {
-        ZStack {
-            MJPEGStreamView()
-
-            GeometryReader { geo in
-                ForEach(sim.detections) { det in
-                    let r = CGRect(
-                        x:      det.box.minX * geo.size.width,
-                        y:      det.box.minY * geo.size.height,
-                        width:  det.box.width * geo.size.width,
-                        height: det.box.height * geo.size.height
-                    )
-                    Rectangle()
-                        .stroke(Theme.accent, lineWidth: 1.5)
-                        .frame(width: r.width, height: r.height)
-                        .position(x: r.midX, y: r.midY)
-
-                    Text("\(det.label.uppercased())  \(Int(det.confidence * 100))%")
-                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Theme.accent)
-                        .position(x: r.midX, y: r.minY - 8)
-                }
-            }
+    // Returns the CGRect the image occupies inside the container when displayed with scaledToFit.
+    private func scaledToFitRect(in container: CGSize, aspect imageAspect: CGFloat) -> CGRect {
+        let containerAspect = container.width / container.height
+        if containerAspect > imageAspect {
+            // Container is wider than image → letterbox on left/right
+            let w = container.height * imageAspect
+            return CGRect(x: (container.width - w) / 2, y: 0, width: w, height: container.height)
+        } else {
+            // Container is taller than image → letterbox on top/bottom
+            let h = container.width / imageAspect
+            return CGRect(x: 0, y: (container.height - h) / 2, width: container.width, height: h)
         }
     }
 }

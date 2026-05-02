@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -13,11 +13,12 @@
 		0B769E5CCD236E2FD2754E0C /* DetectionOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED887A859F3DBD42F7AC0D8 /* DetectionOverlayView.swift */; };
 		0FD1ABDF8C5C8FB0DDABAFDC /* StillsGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64752CED0EF478039BD8B966 /* StillsGalleryView.swift */; };
 		12396442342FC84EBE2CEC9F /* MJPEGStreamView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02802BCA4A9B7028BDECAFA2 /* MJPEGStreamView.swift */; };
-		1377BE1B090F93106BDBD80B /* NotesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5346A9DCD00C4F0288365EB9 /* NotesStore.swift */; };
 		16C1EE04F5DE0BCC3B4ECC39 /* HHRCSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2C897C2C7F9327E61C94FA1 /* HHRCSApp.swift */; };
 		1AC6CC8D137FA263E861084E /* NotesTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BBEC94715E7A3B1A897DAAE /* NotesTabView.swift */; };
 		1D9D1C33CE8BBA8C48A9995F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78F3FD2E5E54F594FFC20C38 /* Theme.swift */; };
 		228F52B99E5C7BB20237FDF0 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C61AC55578881349629013CD /* NotificationManager.swift */; };
+		4808E60D53CF481FB50E52AF /* NotificationPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B4C154EA64E4ABDB0276070 /* NotificationPoller.swift */; };
+		89D1E9EBC4804E9F8E139D2C /* DiagnosticRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA17211770284F7C8E084460 /* DiagnosticRecovery.swift */; };
 		2A4BEE9FAB35687B6E944C87 /* AstroArcView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F47490E20794A7DF2F52B3B0 /* AstroArcView.swift */; };
 		2AAA6FCDF0DBD5553BFF545C /* NotesTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BBEC94715E7A3B1A897DAAE /* NotesTabView.swift */; };
 		2ADE84D4CD578B0E6B3C039A /* AstroArcView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F47490E20794A7DF2F52B3B0 /* AstroArcView.swift */; };
@@ -30,16 +31,14 @@
 		47E41F66652A6EA6B444C6D8 /* MJPEGStreamView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02802BCA4A9B7028BDECAFA2 /* MJPEGStreamView.swift */; };
 		49142D7CB116BC46B8B0EFD7 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 548D74E769F5ECFC1B254EF9 /* ContentView.swift */; };
 		49E6D23377A97CF6473D2AA0 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DADB527D048F6F77F54B4FC /* WeatherService.swift */; };
+		4B5C6D7E8F9A0B1C2D3E4F5A /* LaunchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4B5C6D7E8F9A0B1C2D3E4F /* LaunchView.swift */; };
 		5172E2A457B17079CA5A8B24 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 548D74E769F5ECFC1B254EF9 /* ContentView.swift */; };
 		56C4CE0164D10A6FB7644011 /* StillsGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64752CED0EF478039BD8B966 /* StillsGalleryView.swift */; };
 		57887BD79F3218569F012E1E /* MJPEGPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13351969060BDB832C822966 /* MJPEGPlayer.swift */; };
 		57FB7B591803FA0671F640C2 /* DataTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23CBB50F965A345E7E43622E /* DataTabView.swift */; };
-		5EB31641EA1BB80BD230CD9A /* Note.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F35CE6A665F04BE288D4A5 /* Note.swift */; };
+		5C6D7E8F9A0B1C2D3E4F5A6B /* LaunchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4B5C6D7E8F9A0B1C2D3E4F /* LaunchView.swift */; };
 		66F028D9DE8A4A551ABE2BCE /* AILogEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED57279F1CC400BE3932C443 /* AILogEntry.swift */; };
 		69EB65AED88A251297C72452 /* SettingsTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A791025D6244CC68CB44D96 /* SettingsTabView.swift */; };
-		6D9B19FEE950B2181A61D039 /* FieldAgentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FB0823994C9F63E7754160A /* FieldAgentView.swift */; };
-		71DBF700EA4457E1605CB31E /* FieldAgentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FB0823994C9F63E7754160A /* FieldAgentView.swift */; };
-		7C1DF84CBDBCD12DCDD85586 /* Note.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F35CE6A665F04BE288D4A5 /* Note.swift */; };
 		87B6A5234CA2D77AC262DB7E /* ControlTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C94BE2D45CDA4B0C1684DD4 /* ControlTabView.swift */; };
 		90F08CD3D93993173D8EB6BD /* DetectionOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED887A859F3DBD42F7AC0D8 /* DetectionOverlayView.swift */; };
 		9185E77FE16E7A378AFF3D49 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A365937316D950F0C7CD7AD /* AppSettings.swift */; };
@@ -48,18 +47,21 @@
 		AA6A78060B4664334E56D2BD /* DataViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3658BB8E2148B3E25884427E /* DataViewModel.swift */; };
 		AF01E1D305F43A5C15DD8414 /* DataViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3658BB8E2148B3E25884427E /* DataViewModel.swift */; };
 		B251713195D76534D5FA7143 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C61AC55578881349629013CD /* NotificationManager.swift */; };
+		7F1ACBE23D054E5181605069 /* NotificationPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B4C154EA64E4ABDB0276070 /* NotificationPoller.swift */; };
+		4AA7589351D84AB58779C3AF /* DiagnosticRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA17211770284F7C8E084460 /* DiagnosticRecovery.swift */; };
 		B36554BB1B23F45A1820AD2C /* DeviceOrientationObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B5CD4BF9020F94B75BDFF53 /* DeviceOrientationObserver.swift */; };
 		B6D7F3DD25D4252F913F4C43 /* CameraTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D9757745C2EEDD2758786E5 /* CameraTabView.swift */; };
 		BF5AEF22363C1E4EAD8C4EBB /* CapturedStill.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5705655DABA81BA23F8897D /* CapturedStill.swift */; };
 		C1C60FDD5AD5B05D23F7B117 /* AstroService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235044C39CFD525F84C562C2 /* AstroService.swift */; };
 		C6EB650A8286EA628B5D4322 /* MJPEGPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13351969060BDB832C822966 /* MJPEGPlayer.swift */; };
+		D1E2F3A4B5C6D7E8F9A0B1C2 /* EventLogLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A6F7E8D9C0B1A2 /* EventLogLine.swift */; };
 		D28287E5F71BAEC55C5D2BD4 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78F3FD2E5E54F594FFC20C38 /* Theme.swift */; };
 		D3048BE28BCCE8486C8A6C3A /* AstroService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235044C39CFD525F84C562C2 /* AstroService.swift */; };
 		D4D2574A04F7D5281CF0078D /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A365937316D950F0C7CD7AD /* AppSettings.swift */; };
 		DA8B2D4DAA1E9C25012D0F2C /* CameraTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D9757745C2EEDD2758786E5 /* CameraTabView.swift */; };
 		DBBDEF1236B33F2D61562B42 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 870811B415431ECEC3A21CF0 /* Assets.xcassets */; };
 		DD12A5CB3055A652045F4A5B /* AILogEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED57279F1CC400BE3932C443 /* AILogEntry.swift */; };
-		E07D415A1837D82A03D33415 /* NotesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5346A9DCD00C4F0288365EB9 /* NotesStore.swift */; };
+		E1F2A3B4C5D6E7F8A9B0C1D2 /* EventLogLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A6F7E8D9C0B1A2 /* EventLogLine.swift */; };
 		E4E9842E9C2B0E8BFB3500E6 /* StillFrameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBE148B5C3E6C9F9CBE4F5A /* StillFrameView.swift */; };
 		EB596481974C88D49B0589CB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 870811B415431ECEC3A21CF0 /* Assets.xcassets */; };
 		FF42740CED83F3E35FAC11B1 /* InstrumentComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30229EF73E88E1F5D2955BD4 /* InstrumentComponents.swift */; };
@@ -73,47 +75,38 @@
 		23CBB50F965A345E7E43622E /* DataTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataTabView.swift; sourceTree = "<group>"; };
 		30229EF73E88E1F5D2955BD4 /* InstrumentComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstrumentComponents.swift; sourceTree = "<group>"; };
 		3658BB8E2148B3E25884427E /* DataViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataViewModel.swift; sourceTree = "<group>"; };
+		3A4B5C6D7E8F9A0B1C2D3E4F /* LaunchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchView.swift; sourceTree = "<group>"; };
 		4A791025D6244CC68CB44D96 /* SettingsTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTabView.swift; sourceTree = "<group>"; };
+		BA17211770284F7C8E084460 /* DiagnosticRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticRecovery.swift; sourceTree = "<group>"; };
 		4C94BE2D45CDA4B0C1684DD4 /* ControlTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlTabView.swift; sourceTree = "<group>"; };
 		4D9757745C2EEDD2758786E5 /* CameraTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraTabView.swift; sourceTree = "<group>"; };
-		5346A9DCD00C4F0288365EB9 /* NotesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesStore.swift; sourceTree = "<group>"; };
 		548D74E769F5ECFC1B254EF9 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		5A365937316D950F0C7CD7AD /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		64752CED0EF478039BD8B966 /* StillsGalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StillsGalleryView.swift; sourceTree = "<group>"; };
-		71F6A5ECD1FB347F6697DCDB /* HHRCS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HHRCS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		71F6A5ECD1FB347F6697DCDB /* HHRCS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HHRCS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		78F3FD2E5E54F594FFC20C38 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		7ED887A859F3DBD42F7AC0D8 /* DetectionOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectionOverlayView.swift; sourceTree = "<group>"; };
-		7FB0823994C9F63E7754160A /* FieldAgentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldAgentView.swift; sourceTree = "<group>"; };
 		870811B415431ECEC3A21CF0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8FBE148B5C3E6C9F9CBE4F5A /* StillFrameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StillFrameView.swift; sourceTree = "<group>"; };
 		9BBEC94715E7A3B1A897DAAE /* NotesTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesTabView.swift; sourceTree = "<group>"; };
 		9DADB527D048F6F77F54B4FC /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
 		A4AE95CC2CE2A37EAFF9BD93 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		A9F35CE6A665F04BE288D4A5 /* Note.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Note.swift; sourceTree = "<group>"; };
 		C61AC55578881349629013CD /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
+		7B4C154EA64E4ABDB0276070 /* NotificationPoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPoller.swift; sourceTree = "<group>"; };
 		D06F605948CFA8F4FA89149E /* HHRCS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HHRCS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DBD4BD10641E042B18F212F9 /* HHRCS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HHRCS.entitlements; sourceTree = "<group>"; };
 		E4EE71F6D27B0AADB5B71EAC /* SessionLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionLogView.swift; sourceTree = "<group>"; };
 		E5705655DABA81BA23F8897D /* CapturedStill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapturedStill.swift; sourceTree = "<group>"; };
 		ED57279F1CC400BE3932C443 /* AILogEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AILogEntry.swift; sourceTree = "<group>"; };
+		F1E2D3C4B5A6F7E8D9C0B1A2 /* EventLogLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventLogLine.swift; sourceTree = "<group>"; };
 		F2C897C2C7F9327E61C94FA1 /* HHRCSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HHRCSApp.swift; sourceTree = "<group>"; };
 		F47490E20794A7DF2F52B3B0 /* AstroArcView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstroArcView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
-		29B449E077CD9F31FBFDE6EF /* Agent */ = {
-			isa = PBXGroup;
-			children = (
-				7FB0823994C9F63E7754160A /* FieldAgentView.swift */,
-			);
-			path = Agent;
-			sourceTree = "<group>";
-		};
 		3E369B80478C3A8BB6BBA8A1 /* Notes */ = {
 			isa = PBXGroup;
 			children = (
-				A9F35CE6A665F04BE288D4A5 /* Note.swift */,
-				5346A9DCD00C4F0288365EB9 /* NotesStore.swift */,
 				9BBEC94715E7A3B1A897DAAE /* NotesTabView.swift */,
 			);
 			path = Notes;
@@ -142,6 +135,7 @@
 				548D74E769F5ECFC1B254EF9 /* ContentView.swift */,
 				0B5CD4BF9020F94B75BDFF53 /* DeviceOrientationObserver.swift */,
 				F2C897C2C7F9327E61C94FA1 /* HHRCSApp.swift */,
+				3A4B5C6D7E8F9A0B1C2D3E4F /* LaunchView.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -150,6 +144,7 @@
 			isa = PBXGroup;
 			children = (
 				ED57279F1CC400BE3932C443 /* AILogEntry.swift */,
+				F1E2D3C4B5A6F7E8D9C0B1A2 /* EventLogLine.swift */,
 				F47490E20794A7DF2F52B3B0 /* AstroArcView.swift */,
 				235044C39CFD525F84C562C2 /* AstroService.swift */,
 				E5705655DABA81BA23F8897D /* CapturedStill.swift */,
@@ -188,7 +183,6 @@
 				870811B415431ECEC3A21CF0 /* Assets.xcassets */,
 				DBD4BD10641E042B18F212F9 /* HHRCS.entitlements */,
 				A4AE95CC2CE2A37EAFF9BD93 /* Info.plist */,
-				29B449E077CD9F31FBFDE6EF /* Agent */,
 				5A81192D3BA9CECCF57BBFCA /* App */,
 				78AFD7249CE949C75F0F96A3 /* Camera */,
 				83BD14F27DF017F4A0A186AC /* Control */,
@@ -215,6 +209,7 @@
 			children = (
 				5A365937316D950F0C7CD7AD /* AppSettings.swift */,
 				4A791025D6244CC68CB44D96 /* SettingsTabView.swift */,
+				BA17211770284F7C8E084460 /* DiagnosticRecovery.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -223,6 +218,7 @@
 			isa = PBXGroup;
 			children = (
 				C61AC55578881349629013CD /* NotificationManager.swift */,
+				7B4C154EA64E4ABDB0276070 /* NotificationPoller.swift */,
 			);
 			path = Notifications;
 			sourceTree = "<group>";
@@ -282,8 +278,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1540;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = CA1A2D2479C86E0F0DCE94AE /* Build configuration list for PBXProject "HHRCS" */;
 			developmentRegion = en;
@@ -330,26 +324,27 @@
 			buildActionMask = 2147483647;
 			files = (
 				66F028D9DE8A4A551ABE2BCE /* AILogEntry.swift in Sources */,
+				E1F2A3B4C5D6E7F8A9B0C1D2 /* EventLogLine.swift in Sources */,
 				9185E77FE16E7A378AFF3D49 /* AppSettings.swift in Sources */,
 				2A4BEE9FAB35687B6E944C87 /* AstroArcView.swift in Sources */,
 				D3048BE28BCCE8486C8A6C3A /* AstroService.swift in Sources */,
 				DA8B2D4DAA1E9C25012D0F2C /* CameraTabView.swift in Sources */,
 				342647823806E877BA2C0515 /* CapturedStill.swift in Sources */,
 				49142D7CB116BC46B8B0EFD7 /* ContentView.swift in Sources */,
+				4B5C6D7E8F9A0B1C2D3E4F5A /* LaunchView.swift in Sources */,
 				87B6A5234CA2D77AC262DB7E /* ControlTabView.swift in Sources */,
 				57FB7B591803FA0671F640C2 /* DataTabView.swift in Sources */,
 				AF01E1D305F43A5C15DD8414 /* DataViewModel.swift in Sources */,
 				90F08CD3D93993173D8EB6BD /* DetectionOverlayView.swift in Sources */,
 				A7B478A77E6A16795FFF758C /* DeviceOrientationObserver.swift in Sources */,
-				71DBF700EA4457E1605CB31E /* FieldAgentView.swift in Sources */,
 				30D93125551B190FF2A5648E /* HHRCSApp.swift in Sources */,
 				025CD9B6B06E602DC329D42C /* InstrumentComponents.swift in Sources */,
 				57887BD79F3218569F012E1E /* MJPEGPlayer.swift in Sources */,
 				47E41F66652A6EA6B444C6D8 /* MJPEGStreamView.swift in Sources */,
-				5EB31641EA1BB80BD230CD9A /* Note.swift in Sources */,
-				E07D415A1837D82A03D33415 /* NotesStore.swift in Sources */,
 				1AC6CC8D137FA263E861084E /* NotesTabView.swift in Sources */,
 				228F52B99E5C7BB20237FDF0 /* NotificationManager.swift in Sources */,
+				4808E60D53CF481FB50E52AF /* NotificationPoller.swift in Sources */,
+				89D1E9EBC4804E9F8E139D2C /* DiagnosticRecovery.swift in Sources */,
 				A75CAA66F00A8C552A19DA9A /* SessionLogView.swift in Sources */,
 				3D3A70C355F73116BE826D7C /* SettingsTabView.swift in Sources */,
 				E4E9842E9C2B0E8BFB3500E6 /* StillFrameView.swift in Sources */,
@@ -364,26 +359,27 @@
 			buildActionMask = 2147483647;
 			files = (
 				DD12A5CB3055A652045F4A5B /* AILogEntry.swift in Sources */,
+				D1E2F3A4B5C6D7E8F9A0B1C2 /* EventLogLine.swift in Sources */,
 				D4D2574A04F7D5281CF0078D /* AppSettings.swift in Sources */,
 				2ADE84D4CD578B0E6B3C039A /* AstroArcView.swift in Sources */,
 				C1C60FDD5AD5B05D23F7B117 /* AstroService.swift in Sources */,
 				B6D7F3DD25D4252F913F4C43 /* CameraTabView.swift in Sources */,
 				BF5AEF22363C1E4EAD8C4EBB /* CapturedStill.swift in Sources */,
 				5172E2A457B17079CA5A8B24 /* ContentView.swift in Sources */,
+				5C6D7E8F9A0B1C2D3E4F5A6B /* LaunchView.swift in Sources */,
 				024D5A609B182F0B4AC16483 /* ControlTabView.swift in Sources */,
 				3C799AFCC36A0CEEDB2CE2EB /* DataTabView.swift in Sources */,
 				AA6A78060B4664334E56D2BD /* DataViewModel.swift in Sources */,
 				0B769E5CCD236E2FD2754E0C /* DetectionOverlayView.swift in Sources */,
 				B36554BB1B23F45A1820AD2C /* DeviceOrientationObserver.swift in Sources */,
-				6D9B19FEE950B2181A61D039 /* FieldAgentView.swift in Sources */,
 				16C1EE04F5DE0BCC3B4ECC39 /* HHRCSApp.swift in Sources */,
 				FF42740CED83F3E35FAC11B1 /* InstrumentComponents.swift in Sources */,
 				C6EB650A8286EA628B5D4322 /* MJPEGPlayer.swift in Sources */,
 				12396442342FC84EBE2CEC9F /* MJPEGStreamView.swift in Sources */,
-				7C1DF84CBDBCD12DCDD85586 /* Note.swift in Sources */,
-				1377BE1B090F93106BDBD80B /* NotesStore.swift in Sources */,
 				2AAA6FCDF0DBD5553BFF545C /* NotesTabView.swift in Sources */,
 				B251713195D76534D5FA7143 /* NotificationManager.swift in Sources */,
+				7F1ACBE23D054E5181605069 /* NotificationPoller.swift in Sources */,
+				4AA7589351D84AB58779C3AF /* DiagnosticRecovery.swift in Sources */,
 				37F8E4E08174DB1FB15D5694 /* SessionLogView.swift in Sources */,
 				69EB65AED88A251297C72452 /* SettingsTabView.swift in Sources */,
 				335E4CE7F9AC11F273DDACAF /* StillFrameView.swift in Sources */,
@@ -476,7 +472,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.4.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.brandonpoole.hhrcs;
 				PRODUCT_NAME = HHRCS;
 				SDKROOT = macosx;
@@ -494,15 +490,16 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = ACNC2L5QSV;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = HHRCS/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.4.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.brandonpoole.hhrcs;
 				PRODUCT_NAME = HHRCS;
 				SDKROOT = iphoneos;
@@ -528,7 +525,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.4.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.brandonpoole.hhrcs;
 				PRODUCT_NAME = HHRCS;
 				SDKROOT = macosx;
@@ -545,15 +542,16 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = ACNC2L5QSV;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = HHRCS/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.4.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.brandonpoole.hhrcs;
 				PRODUCT_NAME = HHRCS;
 				SDKROOT = iphoneos;

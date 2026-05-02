@@ -70,7 +70,7 @@ struct AstroArcView: View {
 
                 ctx.draw(
                     Text(ev.name)
-                        .font(.system(size: 8, weight: .semibold))
+                        .font(.system(size: 8, weight: .semibold, design: .monospaced))
                         .tracking(1.8)
                         .foregroundColor(.white),
                     at: .init(x: x, y: aboveName), anchor: .center
