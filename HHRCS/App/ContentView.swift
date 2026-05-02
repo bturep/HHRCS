@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 // MARK: – Tab definitions
 
@@ -18,8 +21,9 @@ private let appTabs: [TabDef] = [
 // MARK: – Root view
 
 struct ContentView: View {
-    @State private var selectedTab = 0
-    @State private var isLaunched  = false
+    @State private var selectedTab  = 0
+    @State private var isLaunched   = false
+    @State private var tabBarHidden = false
     @EnvironmentObject var orientationObserver: DeviceOrientationObserver
 
     private var isLandscape: Bool { orientationObserver.orientation.isLandscape }
@@ -30,12 +34,12 @@ struct ContentView: View {
                 if isLandscape {
                     HStack(spacing: 0) {
                         tabContent
-                        AppTabBar(selectedTab: $selectedTab)
+                        if !tabBarHidden { AppTabBar(selectedTab: $selectedTab) }
                     }
                 } else {
                     VStack(spacing: 0) {
                         tabContent
-                        AppTabBar(selectedTab: $selectedTab)
+                        if !tabBarHidden { AppTabBar(selectedTab: $selectedTab) }
                     }
                 }
             }
@@ -51,6 +55,16 @@ struct ContentView: View {
             }
         }
         .animation(.easeIn(duration: 0.3), value: isLaunched)
+        #if os(iOS)
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notif in
+            let dur = notif.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+            withAnimation(.easeInOut(duration: dur)) { tabBarHidden = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { notif in
+            let dur = notif.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+            withAnimation(.easeInOut(duration: dur)) { tabBarHidden = false }
+        }
+        #endif
     }
 
     private var tabContent: some View {

@@ -95,53 +95,78 @@ struct FullscreenImageView: View {
     @State private var lastOffset: CGSize  = .zero
 
     var body: some View {
-        ZStack {
-            Theme.background.ignoresSafeArea()
+        GeometryReader { geo in
+            ZStack {
+                Theme.background.ignoresSafeArea()
 
-            Image(platformImage: image)
-                .resizable()
-                .scaledToFit()
-                .scaleEffect(scale)
-                .offset(offset)
-                .gesture(
-                    MagnificationGesture()
-                        .onChanged { v in
-                            scale = max(1.0, lastScale * v)
-                        }
-                        .onEnded { _ in
-                            lastScale = scale
-                            if scale < 1.0 {
-                                withAnimation(.spring()) {
-                                    scale = 1.0; lastScale = 1.0
-                                    offset = .zero; lastOffset = .zero
-                                }
+                Image(platformImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .scaleEffect(scale)
+                    .offset(offset)
+                    .gesture(
+                        MagnificationGesture()
+                            .onChanged { v in
+                                scale = max(1.0, lastScale * v)
                             }
-                        }
-                )
-                .simultaneousGesture(
-                    DragGesture()
-                        .onChanged { v in
-                            offset = CGSize(
-                                width:  lastOffset.width  + v.translation.width,
-                                height: lastOffset.height + v.translation.height
-                            )
-                        }
-                        .onEnded { _ in lastOffset = offset }
-                )
+                            .onEnded { _ in
+                                lastScale = scale
+                                let (maxX, maxY) = clampBounds(in: geo)
+                                let clamped = CGSize(
+                                    width:  min(maxX,  max(-maxX,  offset.width)),
+                                    height: min(maxY, max(-maxY, offset.height))
+                                )
+                                withAnimation(.spring()) { offset = clamped }
+                                lastOffset = clamped
+                            }
+                    )
+                    .simultaneousGesture(
+                        DragGesture()
+                            .onChanged { v in
+                                let (maxX, maxY) = clampBounds(in: geo)
+                                offset = CGSize(
+                                    width:  min(maxX,  max(-maxX,  lastOffset.width  + v.translation.width)),
+                                    height: min(maxY, max(-maxY, lastOffset.height + v.translation.height))
+                                )
+                            }
+                            .onEnded { _ in lastOffset = offset }
+                    )
 
-            VStack {
-                HStack {
-                    Spacer()
-                    Button { isPresented = false } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.white)
-                            .padding(20)
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button { isPresented = false } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.white)
+                                .padding(20)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                    Spacer()
                 }
-                Spacer()
             }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
+        .ignoresSafeArea()
+    }
+
+    private func clampBounds(in geo: GeometryProxy) -> (CGFloat, CGFloat) {
+        let size = geo.size
+        guard size.width > 0, size.height > 0,
+              image.size.width > 0, image.size.height > 0 else { return (0, 0) }
+        let imgAspect = image.size.width / image.size.height
+        let ctrAspect = size.width / size.height
+        let rw: CGFloat
+        let rh: CGFloat
+        if imgAspect > ctrAspect {
+            rw = size.width
+            rh = size.width / imgAspect
+        } else {
+            rh = size.height
+            rw = size.height * imgAspect
+        }
+        return (max(0, (rw * scale - size.width)  / 2),
+                max(0, (rh * scale - size.height) / 2))
     }
 }

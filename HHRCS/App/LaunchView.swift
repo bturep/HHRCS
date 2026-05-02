@@ -3,20 +3,16 @@ import SwiftUI
 struct LaunchView: View {
     let onAdvance: (Int) -> Void
 
-    @ObservedObject private var settings = AppSettings.shared
+    private enum Phase { case p1, p2, p3, failed(String) }
 
-    @State private var statusText:  String = "CONNECTING..."
-    @State private var statusColor: Color  = Theme.tertiary
-    @State private var summaryText: String = ""
-    @State private var showSummary: Bool   = false
-    @State private var showActions: Bool   = false
-    @State private var opacity:     Double = 1.0
+    @State private var phase:        Phase              = .p1
+    @State private var dotCount:     Int                = 0
+    @State private var ellipsisTask: Task<Void, Never>? = nil
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            // Center block — HHRCS letter stack
             VStack(alignment: .leading, spacing: -6) {
                 letterRow(letter: "H", word: "UNTER")
                 letterRow(letter: "H", word: "OUSE")
@@ -25,53 +21,87 @@ struct LaunchView: View {
                 letterRow(letter: "S", word: "YSTEM")
             }
 
-            // Bottom overlay
             VStack {
                 Spacer()
-                VStack(spacing: 10) {
-                    Text(statusText)
-                        .font(.system(size: 9, weight: .regular, design: .monospaced))
-                        .tracking(2.0)
-                        .foregroundStyle(statusColor)
-
-                    if showSummary {
-                        Text(summaryText)
-                            .font(.system(size: 9, weight: .regular, design: .monospaced))
-                            .foregroundStyle(Theme.secondary)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(3)
-                            .padding(.horizontal, 32)
-                    }
-
-                    if showActions {
-                        Button { advance(toTab: 3) } label: {
-                            Text("OPEN SETTINGS →")
-                                .font(.system(size: 10, weight: .regular, design: .monospaced))
-                                .tracking(1.5)
-                                .foregroundStyle(Theme.accentOrange)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.top, 4)
-
-                        Button { Task { await attemptConnection() } } label: {
-                            Text("RETRY")
-                                .font(.system(size: 9, weight: .regular, design: .monospaced))
-                                .tracking(1.5)
-                                .foregroundStyle(Theme.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.top, 2)
-                    }
-
-                    Text(appVersionString)
-                        .font(.system(size: 9, weight: .regular, design: .monospaced))
-                        .foregroundStyle(Theme.secondary)
-                }
-                .padding(.bottom, 16)
+                statusBlock
+                    .padding(.bottom, 20)
             }
         }
-        .opacity(opacity)
-        .onAppear { Task { await attemptConnection() } }
+        .onAppear { Task { @MainActor in await runPreflight() } }
+    }
+
+    @ViewBuilder
+    private var statusBlock: some View {
+        if case .failed(let msg) = phase {
+            failedView(msg)
+        } else {
+            activeView
+        }
+    }
+
+    @ViewBuilder
+    private var activeView: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 0) {
+                Text(phaseLabel)
+                Text(String(repeating: ".", count: dotCount)
+                     + String(repeating: " ", count: 3 - dotCount))
+            }
+            .font(.system(size: 9, weight: .regular, design: .monospaced))
+            .tracking(2.0)
+            .foregroundStyle(Theme.tertiary)
+
+            Text(versionString)
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .foregroundStyle(Color(white: 0.28))
+        }
+    }
+
+    @ViewBuilder
+    private func failedView(_ msg: String) -> some View {
+        VStack(spacing: 10) {
+            Text("NO SIGNAL")
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .tracking(2.0)
+                .foregroundStyle(Theme.accentOrange)
+
+            if !msg.isEmpty {
+                Text(msg)
+                    .font(.system(size: 9, weight: .regular, design: .monospaced))
+                    .foregroundStyle(Theme.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
+            Button { onAdvance(0) } label: {
+                Text("CONTINUE OFFLINE")
+                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                    .tracking(1.5)
+                    .foregroundStyle(Theme.accentOrange)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+
+            Button { Task { @MainActor in await runPreflight() } } label: {
+                Text("RETRY")
+                    .font(.system(size: 9, weight: .regular, design: .monospaced))
+                    .tracking(1.5)
+                    .foregroundStyle(Theme.secondary)
+            }
+            .buttonStyle(.plain)
+
+            Button { onAdvance(3) } label: {
+                Text("OPEN SETTINGS →")
+                    .font(.system(size: 9, weight: .regular, design: .monospaced))
+                    .tracking(1.5)
+                    .foregroundStyle(Color(white: 0.38))
+            }
+            .buttonStyle(.plain)
+
+            Text(versionString)
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .foregroundStyle(Color(white: 0.28))
+        }
     }
 
     @ViewBuilder
@@ -87,96 +117,95 @@ struct LaunchView: View {
         }
     }
 
-    // MARK: – Version
+    private var phaseLabel: String {
+        switch phase {
+        case .p1:     return "INITIALIZING"
+        case .p2:     return "ESTABLISHING LINK"
+        case .p3:     return "CONNECTING TO FIELD"
+        case .failed: return ""
+        }
+    }
 
-    private var appVersionString: String {
+    private var versionString: String {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
         let b = Bundle.main.infoDictionary?["CFBundleVersion"]            as? String ?? "—"
         return "v\(v) (\(b))"
     }
 
-    // MARK: – Connection
+    // MARK: – Preflight sequence
 
-    private func attemptConnection() async {
-        statusText  = "CONNECTING..."
-        statusColor = Theme.tertiary
-        showSummary = false
-        showActions = false
+    @MainActor
+    private func runPreflight() async {
+        phase = .p1
+        startEllipsis()
 
-        let base = AppSettings.shared.piServerURL
-        guard !base.isEmpty, let url = URL(string: base + "/status") else {
-            statusText  = "NO URL CONFIGURED"
-            statusColor = Theme.accentOrange
-            summaryText = "Set Pi server URL in Settings to connect."
-            showSummary = true
-            showActions = true
+        // Phase 1: INITIALIZING — /status (advance when done, min 2s display)
+        let t1 = Date()
+        let (ok, errMsg) = await pingStatus()
+        let remain = 2.0 - Date().timeIntervalSince(t1)
+        if remain > 0 { try? await Task.sleep(nanoseconds: UInt64(remain * 1_000_000_000)) }
+
+        guard ok else {
+            stopEllipsis()
+            phase = .failed(errMsg)
             return
         }
 
+        // Phase 2: ESTABLISHING LINK — 3s
+        phase = .p2
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+
+        // Phase 3: CONNECTING TO FIELD — 4s
+        phase = .p3
+        try? await Task.sleep(nanoseconds: 4_000_000_000)
+
+        stopEllipsis()
+        onAdvance(0)
+    }
+
+    private func startEllipsis() {
+        ellipsisTask?.cancel()
+        dotCount = 0
+        ellipsisTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                guard !Task.isCancelled else { break }
+                dotCount = (dotCount + 1) % 4
+            }
+        }
+    }
+
+    private func stopEllipsis() {
+        ellipsisTask?.cancel()
+        ellipsisTask = nil
+        dotCount = 0
+    }
+
+    private func pingStatus() async -> (Bool, String) {
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty, let url = URL(string: base + "/status") else {
+            return (false, "No URL configured — open Settings")
+        }
         var req = URLRequest(url: url)
         req.timeoutInterval = 8
         do {
             let (data, _) = try await URLSession.shared.data(for: req)
             UserDefaults.standard.set(data, forKey: "lastKnownStatus")
-            withAnimation(.easeInOut(duration: 0.2)) {
-                statusText  = "CONNECTED"
-                statusColor = Theme.text
-            }
-            try? await Task.sleep(nanoseconds: 800_000_000)
-            advance(toTab: 0)
+            return (true, "")
         } catch {
-            await handleFailure(base: base)
+            return (false, buildOfflineSummary())
         }
     }
 
-    private func handleFailure(base: String) async {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            statusText  = "PI UNREACHABLE"
-            statusColor = Theme.accentOrange
-        }
-
-        if let url = URL(string: base + "/diagnostics") {
-            var req = URLRequest(url: url)
-            req.timeoutInterval = 4
-            if let (data, _) = try? await URLSession.shared.data(for: req),
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                summaryText = buildSummary(fromDiagnostics: json)
-                withAnimation { showSummary = true; showActions = true }
-                return
-            }
-        }
-
+    private func buildOfflineSummary() -> String {
         if let cached = UserDefaults.standard.data(forKey: "lastKnownStatus"),
            let json = try? JSONSerialization.jsonObject(with: cached) as? [String: Any] {
-            summaryText = buildSummary(fromStatus: json)
-        } else {
-            summaryText = "No prior connection data available."
+            var parts: [String] = []
+            if let sim = json["yolo_sim_mode"]   as? Bool   { parts.append(sim ? "sim" : "live") }
+            if let ble = json["esp32_ble_state"] as? String { parts.append("BLE \(ble.lowercased())") }
+            parts.append("check power and network")
+            return parts.joined(separator: " · ")
         }
-        withAnimation { showSummary = true; showActions = true }
-    }
-
-    private func buildSummary(fromDiagnostics json: [String: Any]) -> String {
-        if let line = json["summary_line"] as? String { return line }
-        var parts: [String] = []
-        if let sim = json["sim_mode"]       as? Bool   { parts.append(sim ? "sim mode" : "live mode") }
-        if let ble = json["ble_state"]      as? String { parts.append("BLE \(ble.lowercased())") }
-        if let n   = json["detections_24h"] as? Int    { parts.append("\(n) detections today") }
-        parts.append("Check power and network")
-        return parts.joined(separator: " · ")
-    }
-
-    private func buildSummary(fromStatus json: [String: Any]) -> String {
-        var parts: [String] = ["Last known"]
-        if let sim = json["yolo_sim_mode"]   as? Bool   { parts.append(sim ? "sim mode" : "live mode") }
-        if let ble = json["esp32_ble_state"] as? String { parts.append("BLE \(ble.lowercased())") }
-        parts.append("Check power and network")
-        return parts.joined(separator: " · ")
-    }
-
-    // MARK: – Navigation
-
-    private func advance(toTab tab: Int) {
-        withAnimation(.easeIn(duration: 0.35)) { opacity = 0 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { onAdvance(tab) }
+        return "Pi unreachable · check power and network"
     }
 }

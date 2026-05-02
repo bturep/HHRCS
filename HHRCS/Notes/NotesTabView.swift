@@ -19,6 +19,8 @@ struct NotesTabView: View {
     @State private var startupFiredAt: Date? = nil
     @State private var startupChatWasEmpty = true
 
+    @FocusState private var composerFocused: Bool
+
     private var queryEntries: [AILogEntry] {
         dataVM.aiLogEntries
             .filter { $0.type == "query" }
@@ -154,6 +156,7 @@ struct NotesTabView: View {
                     .lineLimit(1...4)
                     .submitLabel(.send)
                     .onSubmit { submitAgentQuery() }
+                    .focused($composerFocused)
                 Button(action: submitAgentQuery) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 20))
@@ -167,6 +170,7 @@ struct NotesTabView: View {
             .padding(.horizontal, Theme.pagePadding)
             .padding(.vertical, 12)
             .background(Theme.background)
+            .environment(\.colorScheme, .dark)
 
             HRule().padding(.horizontal, Theme.pagePadding)
         }
@@ -180,6 +184,7 @@ struct NotesTabView: View {
         let text = agentQueryDraft.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
         agentQueryDraft = ""
+        composerFocused = false
         hasSentQuery = true
         Task {
             let base = AppSettings.shared.piServerURL

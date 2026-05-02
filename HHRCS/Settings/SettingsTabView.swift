@@ -224,7 +224,7 @@ struct SettingsTabView: View {
                     TextField("Hunter House", text: $settings.deploymentName)
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .foregroundColor(.white)
-                        .tint(Theme.accent)
+                        .tint(Theme.accentOrange)
                         .submitLabel(.next)
                         .focused($deploymentFocus, equals: .name)
                 }
@@ -233,7 +233,7 @@ struct SettingsTabView: View {
                     TextField("e.g. North Meadow facing NE", text: $settings.positionName)
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .foregroundColor(.white)
-                        .tint(Theme.accent)
+                        .tint(Theme.accentOrange)
                         .submitLabel(.next)
                         .focused($deploymentFocus, equals: .position)
                 }
@@ -242,7 +242,7 @@ struct SettingsTabView: View {
                     TextField("48.515000", text: $latText)
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .foregroundColor(deploymentFocus == .latitude ? .white : Color(Theme.secondary))
-                        .tint(Theme.accent)
+                        .tint(Theme.accentOrange)
                         .keyboardType(.numbersAndPunctuation)
                         .submitLabel(.next)
                         .focused($deploymentFocus, equals: .latitude)
@@ -254,7 +254,7 @@ struct SettingsTabView: View {
                     TextField("-123.408000", text: $lngText)
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .foregroundColor(deploymentFocus == .longitude ? .white : Color(Theme.secondary))
-                        .tint(Theme.accent)
+                        .tint(Theme.accentOrange)
                         .keyboardType(.numbersAndPunctuation)
                         .submitLabel(.next)
                         .focused($deploymentFocus, equals: .longitude)
@@ -306,7 +306,7 @@ struct SettingsTabView: View {
                             TextField("http://", text: $newURLDraft)
                                 .font(.system(size: 11, weight: .regular, design: .monospaced))
                                 .foregroundColor(.white)
-                                .tint(Theme.accent)
+                                .tint(Theme.accentOrange)
                                 .keyboardType(.URL)
                                 .autocapitalization(.none)
                                 .disableAutocorrection(true)
@@ -315,7 +315,7 @@ struct SettingsTabView: View {
                             Button("SAVE") { saveNewURL() }
                                 .font(Theme.dataLabel(size: 9))
                                 .tracking(Theme.labelTracking)
-                                .foregroundStyle(Theme.accent)
+                                .foregroundStyle(Theme.accentOrange)
                                 .buttonStyle(.plain)
                             Button("CANCEL") { newURLDraft = ""; showAddURL = false }
                                 .font(Theme.dataLabel(size: 9))
@@ -329,7 +329,7 @@ struct SettingsTabView: View {
                         Button("+ ADD") { showAddURL = true }
                             .font(Theme.dataLabel(size: 9))
                             .tracking(Theme.labelTracking)
-                            .foregroundStyle(Theme.accent)
+                            .foregroundStyle(Theme.accentOrange)
                             .buttonStyle(.plain)
                             .padding(.vertical, 7)
                         HRule()
@@ -407,7 +407,7 @@ struct SettingsTabView: View {
                     Text(settings.ownerModeEnabled ? "Active" : "Locked")
                         .font(Theme.dataLabel(size: 11))
                         .tracking(Theme.labelTracking)
-                        .foregroundStyle(settings.ownerModeEnabled ? Theme.accent : Theme.tertiary)
+                        .foregroundStyle(settings.ownerModeEnabled ? Theme.accentOrange : Theme.tertiary)
                     Spacer()
                     if settings.ownerModeEnabled {
                         Button("LOCK") { settings.lockOwnerMode() }
@@ -419,7 +419,7 @@ struct SettingsTabView: View {
                         Button("UNLOCK") { showOwnerUnlock = true }
                             .font(Theme.dataLabel(size: 9))
                             .tracking(Theme.labelTracking)
-                            .foregroundStyle(Theme.accent)
+                            .foregroundStyle(Theme.accentOrange)
                             .buttonStyle(.plain)
                     }
                 }
@@ -452,17 +452,17 @@ struct SettingsTabView: View {
                                 Text(ownerPWChangeMsg)
                                     .font(.system(size: 11, weight: .regular, design: .monospaced))
                                     .foregroundStyle(ownerPWChangeMsg == "Password updated"
-                                        ? Theme.accent : Theme.tertiary)
+                                        ? Theme.accentOrange : Theme.tertiary)
                             }
                             Button(action: commitOwnerPWChange) {
                                 Text("UPDATE")
                                     .font(Theme.dataLabel())
                                     .tracking(Theme.labelTracking)
-                                    .foregroundStyle(Theme.accent)
+                                    .foregroundStyle(Theme.accentOrange)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 10)
                                     .overlay(RoundedRectangle(cornerRadius: 3)
-                                        .stroke(Theme.accent.opacity(0.4), lineWidth: 0.5))
+                                        .stroke(Theme.accentOrange.opacity(0.4), lineWidth: 0.5))
                             }
                             .buttonStyle(.plain)
                         }
@@ -574,7 +574,7 @@ struct SettingsTabView: View {
                         TextField("sk-ant-...", text: $settings.anthropicAPIKey)
                             .font(Theme.dataValueText(size: 14))
                             .foregroundColor(.white)
-                            .tint(Theme.accent)
+                            .tint(Theme.accentOrange)
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
                             .submitLabel(.done)
@@ -590,7 +590,7 @@ struct SettingsTabView: View {
                     Button(isEditingAPIKey ? "DONE" : "EDIT") { isEditingAPIKey.toggle() }
                         .font(Theme.dataLabel(size: 9))
                         .tracking(Theme.labelTracking)
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(Theme.accentOrange)
                         .buttonStyle(.plain)
                 }
                 HRule()
@@ -708,35 +708,35 @@ private struct NewDeploymentSheet: View {
                         newDepField(label: "SITE") {
                             TextField("Hunter House", text: $name)
                                 .font(.system(size: 11, weight: .regular, design: .monospaced))
-                                .foregroundColor(.white).tint(Theme.accent)
+                                .foregroundColor(.white).tint(Theme.accentOrange)
                         }
                         newDepField(label: "POSITION") {
                             TextField("e.g. North Meadow facing NE", text: $position)
                                 .font(.system(size: 11, weight: .regular, design: .monospaced))
-                                .foregroundColor(.white).tint(Theme.accent)
+                                .foregroundColor(.white).tint(Theme.accentOrange)
                         }
                         newDepField(label: "LATITUDE") {
                             TextField("48.515000", text: $lat)
                                 .font(.system(size: 11, weight: .regular, design: .monospaced))
-                                .foregroundColor(.white).tint(Theme.accent)
+                                .foregroundColor(.white).tint(Theme.accentOrange)
                                 .keyboardType(.numbersAndPunctuation)
                         }
                         newDepField(label: "LONGITUDE") {
                             TextField("-123.408000", text: $lng)
                                 .font(.system(size: 11, weight: .regular, design: .monospaced))
-                                .foregroundColor(.white).tint(Theme.accent)
+                                .foregroundColor(.white).tint(Theme.accentOrange)
                                 .keyboardType(.numbersAndPunctuation)
                         }
                         newDepField(label: "BEARING") {
                             TextField("e.g. 045 (optional)", text: $bearing)
                                 .font(.system(size: 11, weight: .regular, design: .monospaced))
-                                .foregroundColor(.white).tint(Theme.accent)
+                                .foregroundColor(.white).tint(Theme.accentOrange)
                                 .keyboardType(.numbersAndPunctuation)
                         }
                         newDepField(label: "NOTES") {
                             TextField("Optional notes", text: $notes, axis: .vertical)
                                 .font(.system(size: 11, weight: .regular, design: .monospaced))
-                                .foregroundColor(.white).tint(Theme.accent)
+                                .foregroundColor(.white).tint(Theme.accentOrange)
                                 .lineLimit(1...3)
                         }
                     }
@@ -850,7 +850,7 @@ private struct ToggleRow: View {
             Spacer()
             Toggle("", isOn: $isOn)
                 .labelsHidden()
-                .tint(Theme.accent)
+                .tint(Theme.accentOrange)
                 .scaleEffect(0.75)
                 .frame(width: 38, height: 24)
                 .onChange(of: isOn) { _, v in onChange?(v) }
@@ -882,7 +882,7 @@ private struct OwnerUnlockSheet: View {
                 HStack(spacing: 18) {
                     ForEach(0..<4, id: \.self) { i in
                         Circle()
-                            .fill(i < pinEntry.count ? Theme.accent : Theme.rule)
+                            .fill(i < pinEntry.count ? Theme.accentOrange : Theme.rule)
                             .frame(width: 10, height: 10)
                     }
                 }
@@ -985,7 +985,7 @@ private struct DiagnosticEventRow: View {
 
     private var labelColor: Color {
         switch line.label {
-        case "TRIGGER", "REC": return Theme.accent
+        case "TRIGGER", "REC": return Theme.accentOrange
         case "ERROR":          return Theme.tertiary
         default:               return Theme.secondary
         }
@@ -1008,7 +1008,7 @@ private struct PINField: View {
             SecureField("••••", text: $text)
                 .font(Theme.dataValue(size: 17))
                 .foregroundColor(.white)
-                .tint(Theme.accent)
+                .tint(Theme.accentOrange)
                 .keyboardType(.numberPad)
         }
     }

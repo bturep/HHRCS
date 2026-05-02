@@ -22,7 +22,9 @@ struct StillsGalleryView: View {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(vm.stills) { still in
-                        StillCell(still: still, timeFormatter: Self.timeFormatter)
+                        StillCell(still: still, timeFormatter: Self.timeFormatter) {
+                        vm.stills.removeAll { $0.id == still.id }
+                    }
                     }
                 }
                 .padding(Theme.pagePadding)
@@ -56,8 +58,10 @@ struct StillsGalleryView: View {
 private struct StillCell: View {
     let still: CapturedStill
     let timeFormatter: DateFormatter
+    let onDelete: () -> Void
 
-    @State private var showFullscreen = false
+    @State private var showDeleteAlert = false
+    @State private var showFullscreen  = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -66,6 +70,7 @@ private struct StillCell: View {
                 .clipped()
                 .cornerRadius(4)
                 .onTapGesture { showFullscreen = true }
+                .onLongPressGesture { showDeleteAlert = true }
 
             HStack(spacing: 4) {
                 Text(timeFormatter.string(from: still.timestamp))
@@ -102,6 +107,10 @@ private struct StillCell: View {
             }
         }
         #endif
+        .alert("Delete this still?", isPresented: $showDeleteAlert) {
+            Button("DELETE", role: .destructive) { onDelete() }
+            Button("CANCEL", role: .cancel) { }
+        }
     }
 
     @ViewBuilder
