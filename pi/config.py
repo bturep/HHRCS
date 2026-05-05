@@ -55,9 +55,6 @@ class Config:
     format: str = "BRAW 12:1"
     resolution: str = "6K"
 
-    # BLE
-    ble_reconnect_interval: int = 10
-
     # Pi
     pi_cam_resolution: Tuple[int, int] = (1152, 648)
     pi_cam_sensor_mode: Tuple[int, int] = (2304, 1296)
@@ -74,6 +71,10 @@ class Config:
 
 # Singleton
 config = Config()
+
+# ── BMPCC Camera (ethernet) ────────────────────────────────────────────────────
+CAMERA_BASE_URL = "http://192.168.10.2/control/api/v1"
+CAMERA_REQUEST_TIMEOUT = 3
 
 # ── Push notifications (ntfy.sh) ───────────────────────────────────────────────
 NTFY_TOPIC = "hhrcs-4a4a678c"

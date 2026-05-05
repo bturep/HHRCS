@@ -3,7 +3,7 @@ HHRCS API Server — Raspberry Pi
 Flask REST API consumed by the HHRCS iOS/macOS app via Tailscale.
 
 Hardware path for camera commands:
-    Pi  →─(USB serial)─→  ESP32 (BlueMagic32 / Magic-Pocket-Control)  →─(BLE)─→  BMPCC 6K Pro
+    Pi  →─(ethernet)─→  BMPCC 6K Pro REST API (192.168.10.2)
 
 Endpoints match the simulation server exactly so the iOS app needs no changes
 when switching from sim (Mac) to real (Pi).
@@ -19,7 +19,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 
-from config import config
+from config import config, CAMERA_BASE_URL
 from state_machine import StateMachine, TriggerType
 from sensors import (
     to_dict as sensors_dict,
@@ -33,6 +33,7 @@ from sensors import (
 )
 from detector import Detector
 from camera_control import camera
+from camera_http import BMPCCCameraClient
 from session import (
     log_session, get_sessions, get_agent_log,
     get_field_notes, save_field_note, log_agent_entry,
@@ -58,6 +59,12 @@ log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
+
+# ── Shared camera HTTP client (singleton for /camera/* endpoints) ──────────────
+_cam_client = BMPCCCameraClient()
+
+# Clip name to use for the next record start (set via PUT /camera/clip_name)
+_next_clip_name: str = ""
 
 # ── State machine + hardware wiring ───────────────────────────────────────────
 
@@ -91,28 +98,13 @@ def _on_record_start(trigger):
 
 
 def _on_record_stop(elapsed):
-    global _current_clip_id
-    global _camera_started
+    global _current_clip_id, _camera_started
     _sensors_stop()
     if _camera_started:
         camera.record_stop()
         _camera_started = False
     else:
-        log.info(f"Sim mode — skipping camera.record_stop")
-
-    # BLE drop guard — poll bridge once after stop to catch silent disconnects
-    try:
-        ble = camera.ble_state
-        if ble != "Connected":
-            emit("system.error", {
-                "subsystem": "api_server",
-                "error_type": "ble_drop_during_stop",
-                "message": f"BLE state after record stop: {ble}",
-                "clip_id": _current_clip_id,
-            })
-            log.warning(f"BLE drop guard: state={ble} after stop for clip={_current_clip_id}")
-    except Exception as e:
-        log.warning(f"BLE drop guard check failed: {e}")
+        log.info("Sim mode — skipping camera.record_stop")
 
     lux = read_lux()
     emit("recording.stopped", {
@@ -269,6 +261,7 @@ def status():
     cam = get_camera_state()
     sm_data = sm.to_dict()
     uptime = int(time.time() - _uptime_start)
+    cam_state = _cam_client.get_full_state()
 
     return jsonify({
         "deployment": config.deployment_name,
@@ -306,10 +299,18 @@ def status():
         "house_drive_used_tb": read_house_drive_used_tb(),
         "house_drive_total_tb": config.house_drive_total_tb,
 
-        "esp32_connected": camera.connected,
-        "esp32_bridge_reachable": camera.bridge_reachable,
-        "esp32_ble_state": camera.ble_state,
-        "esp32_port": camera.port_name,
+        # Camera (ethernet REST API)
+        "cam_reachable":             cam_state["cam_reachable"],
+        "cam_recording":             cam_state["cam_recording"],
+        "cam_codec":                 cam_state["cam_codec"],
+        "cam_frame_rate":            cam_state["cam_frame_rate"],
+        "cam_resolution":            cam_state["cam_resolution"],
+        "cam_iso":                   cam_state["cam_iso"],
+        "cam_white_balance":         cam_state["cam_white_balance"],
+        "cam_gain":                  cam_state["cam_gain"],
+        "cam_active_media_slot":     cam_state["cam_active_media_slot"],
+        "cam_remaining_record_time": cam_state["cam_remaining_record_time"],
+
         "hardware_lux": sensor_data.get("hardware_lux", False),
         "hardware_env": sensor_data.get("hardware_env", False),
 
@@ -545,6 +546,56 @@ def set_timeout():
     config.countdown_seconds = seconds
     return jsonify({"ok": True, "countdown_seconds": seconds})
 
+# ── Camera (BMPCC REST API passthrough) ───────────────────────────────────────
+
+@app.route("/camera/status", methods=["GET"])
+def camera_status():
+    return jsonify(_cam_client.get_full_state())
+
+@app.route("/camera/record/start", methods=["PUT", "POST"])
+def camera_record_start():
+    global _next_clip_name
+    clip = _next_clip_name
+    _next_clip_name = ""
+    ok = _cam_client.record_start(clip_name=clip)
+    return jsonify({"ok": ok})
+
+@app.route("/camera/record/stop", methods=["PUT", "POST"])
+def camera_record_stop():
+    ok = _cam_client.record_stop()
+    return jsonify({"ok": ok})
+
+@app.route("/camera/iso", methods=["PUT"])
+def camera_set_iso():
+    data = request.json or {}
+    iso = data.get("iso")
+    if not isinstance(iso, int):
+        return jsonify({"error": "iso (int) required"}), 400
+    ok = _cam_client.set_iso(iso)
+    return jsonify({"ok": ok})
+
+@app.route("/camera/white_balance", methods=["PUT"])
+def camera_set_wb():
+    data = request.json or {}
+    kelvin = data.get("kelvin")
+    if not isinstance(kelvin, int):
+        return jsonify({"error": "kelvin (int) required"}), 400
+    ok = _cam_client.set_white_balance(kelvin)
+    return jsonify({"ok": ok})
+
+@app.route("/camera/format", methods=["PUT"])
+def camera_set_format():
+    data = request.json or {}
+    ok = _cam_client.set_format(**data)
+    return jsonify({"ok": ok})
+
+@app.route("/camera/clip_name", methods=["PUT"])
+def camera_set_clip_name():
+    global _next_clip_name
+    data = request.json or {}
+    _next_clip_name = str(data.get("clip_name", ""))
+    return jsonify({"ok": True, "clip_name": _next_clip_name})
+
 # ── MJPEG stream ───────────────────────────────────────────────────────────────
 
 def _mjpeg_frames():
@@ -571,28 +622,15 @@ def stream():
 @app.route("/events", methods=["GET"])
 def get_events():
     """
-    Merged event stream: local ring buffer + bridge events from :5002.
+    Local event ring buffer.
     ?window=300  — lookback seconds (default 300)
     ?types=a,b   — comma-separated type filter
     """
-    import requests as _req
-
     window = request.args.get("window", 300, type=int)
     types_param = request.args.get("types", "")
     types = [t.strip() for t in types_param.split(",") if t.strip()] or None
 
     local = recent(window_seconds=window, types=types)
-
-    bridge = []
-    try:
-        params = {"window": window}
-        if types_param:
-            params["types"] = types_param
-        r = _req.get("http://127.0.0.1:5002/esp32/events", params=params, timeout=1.0)
-        if r.ok:
-            bridge = r.json()
-    except Exception:
-        pass
 
     dep = deployment.get_active_deployment()
     if dep:
@@ -600,13 +638,11 @@ def get_events():
             cutoff = datetime.fromisoformat(dep["started_at"])
             if cutoff.tzinfo is None:
                 cutoff = cutoff.replace(tzinfo=timezone.utc)
-            local  = [e for e in local  if _ts_after(e.get("ts", ""), cutoff)]
-            bridge = [e for e in bridge if _ts_after(e.get("ts", ""), cutoff)]
+            local = [e for e in local if _ts_after(e.get("ts", ""), cutoff)]
         except Exception:
             pass
 
-    merged = sorted(local + bridge, key=lambda e: e.get("ts", ""))
-    return jsonify(merged)
+    return jsonify(local)
 
 
 @app.route("/log", methods=["GET"])
@@ -622,29 +658,6 @@ def get_log():
 
 
 # ── System control ────────────────────────────────────────────────────────────
-
-@app.route("/system/restart-bridge", methods=["POST"])
-def restart_bridge():
-    import subprocess
-    try:
-        # esp32-bridge runs as pi (User=pi in service file); pkill signals the process directly.
-        # systemd Restart=always handles the relaunch — no sudo needed.
-        subprocess.run(["pkill", "-f", "esp32_bridge.py"], check=False)
-        time.sleep(3)
-        return jsonify({"ok": True})
-    except Exception as e:
-        log.error(f"restart-bridge failed: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-@app.route("/system/reset-esp32", methods=["POST"])
-def reset_esp32_endpoint():
-    try:
-        import requests as _req2
-        r = _req2.post("http://127.0.0.1:5002/esp32/reset", timeout=5)
-        return jsonify({"ok": r.ok})
-    except Exception as e:
-        log.error(f"reset-esp32 failed: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/system/restart-hhrcs", methods=["POST"])
 def restart_hhrcs():
@@ -683,19 +696,19 @@ def health():
     return jsonify({
         "ok": True,
         "uptime": int(time.time() - _uptime_start),
-        "esp32": camera.connected,
-        "esp32_port": camera.port_name,
+        "cam_reachable": _cam_client.is_reachable(),
     })
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", config.api_port))
+    cam_ok = _cam_client.is_reachable()
     print(f"\n{'─'*56}")
     print(f"  HHRCS — Raspberry Pi")
     print(f"  {config.deployment_name} · {config.position_name}")
     print(f"  http://0.0.0.0:{port}")
-    print(f"  ESP32: {'connected on ' + str(camera.port_name) if camera.connected else 'NOT CONNECTED'}")
+    print(f"  Camera: {'reachable at ' + CAMERA_BASE_URL if cam_ok else 'NOT REACHABLE'}")
     print(f"{'─'*56}\n")
     os.makedirs(os.path.join(os.path.dirname(__file__), "logs"), exist_ok=True)
     app.run(host=config.api_host, port=port, debug=False, threaded=True)

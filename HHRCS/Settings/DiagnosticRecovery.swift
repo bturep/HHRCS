@@ -12,11 +12,11 @@ enum DiagnosticPanelMode: Equatable {
 }
 
 enum DiagnosticDot: String, CaseIterable {
-    case pi     = "PI"
-    case bridge = "BRIDGE"
-    case ble    = "BLE"
-    case yolo   = "YOLO"
-    case ssd    = "SSD"
+    case pi   = "PI"
+    case cam  = "CAM"
+    case yolo = "YOLO"
+    case card = "CARD"
+    case ssd  = "SSD"
 }
 
 // MARK: – Recovery step model
@@ -189,122 +189,118 @@ struct PiDetailView: View {
     }
 }
 
-// MARK: – Bridge detail
+// MARK: – CAM detail
 
-struct BridgeDetailView: View {
+struct CamDetailView: View {
     @EnvironmentObject var vm: DataViewModel
     @State private var showingRecovery = false
+
+    private static let fmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        f.timeZone   = TimeZone(identifier: "America/Vancouver")
+        return f
+    }()
 
     var body: some View {
         VStack(spacing: 0) {
             if showingRecovery {
-                RecoveryFlowView(title: "RESTART BRIDGE",
-                                 steps: bridgeSteps(),
+                RecoveryFlowView(title: "CAM RECOVERY",
+                                 steps: camSteps(),
                                  onBack: { showingRecovery = false })
             } else {
-                diagRow("BRIDGE",
-                        value:      vm.healthBridgeReachable ? "Reachable" : "Unreachable",
-                        valueColor: vm.healthBridgeReachable ? Theme.accentOrange : Theme.dotRed)
+                diagRow("STATUS",
+                        value:      vm.camReachable ? "Reachable" : "Unreachable",
+                        valueColor: vm.camReachable ? Theme.accentOrange : Theme.dotRed)
                 HRule()
-                diagRow("BLE STATE",
-                        value:      vm.healthEsp32BleState,
-                        valueColor: vm.healthBleConnected ? Theme.accentOrange : Theme.secondary)
+                diagRow("RECORDING",
+                        value:      vm.camRecording ? "Recording" : "Idle",
+                        valueColor: vm.camRecording ? Theme.dotRed : Theme.secondary)
                 HRule()
-                diagRecoveryButton("RESTART BRIDGE") { showingRecovery = true }
+                diagRow("FORMAT",
+                        value:      "\(vm.camCodec) @ \(vm.camFrameRate)",
+                        valueColor: Theme.secondary)
+                HRule()
+                diagRow("RESOLUTION",
+                        value:      vm.camResolution,
+                        valueColor: Theme.secondary)
+                HRule()
+                diagRow("ISO",
+                        value:      vm.camIso.map { "\($0)" } ?? "—",
+                        valueColor: Theme.secondary)
+                HRule()
+                diagRow("WB",
+                        value:      vm.camWhiteBalance.map { "\($0)K" } ?? "—",
+                        valueColor: Theme.secondary)
+                HRule()
+                diagRow("MEDIA",
+                        value:      vm.camActiveMediaSlot,
+                        valueColor: Theme.secondary)
+                HRule()
+                diagRow("LAST POLL",
+                        value:      vm.healthLastPollAt.map { Self.fmt.string(from: $0) } ?? "—",
+                        valueColor: Theme.secondary)
+                HRule()
+                diagRecoveryButton("CAM RECOVERY") { showingRecovery = true }
             }
         }
     }
 
-    private func bridgeSteps() -> [RecoveryStep] {
+    private func camSteps() -> [RecoveryStep] {
         let base = AppSettings.shared.piServerURL
         return [
-            RecoveryStep(label: "RESTARTING BRIDGE SERVICE") {
-                guard let url = URL(string: base + "/system/restart-bridge") else { return .fail("Bad URL") }
-                var req = URLRequest(url: url); req.httpMethod = "POST"; req.timeoutInterval = 8
-                _ = try? await URLSession.shared.data(for: req)
-                return .pass("Sent")
-            },
-            RecoveryStep(label: "WAITING FOR BRIDGE") {
-                for _ in 0..<16 {
+            RecoveryStep(label: "PINGING CAMERA") {
+                await vm.refreshHealth()
+                for _ in 0..<10 {
                     try? await Task.sleep(nanoseconds: 500_000_000)
                     await vm.refreshHealth()
-                    if vm.healthBridgeReachable { return .pass("Reachable") }
+                    if vm.camReachable { return .pass("Reachable") }
                 }
-                return .fail("Timeout")
+                return .fail("Check ethernet cable, camera power, and adapter LED")
             },
-            RecoveryStep(label: "WAITING FOR BLE") {
-                for _ in 0..<20 {
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    await vm.refreshHealth()
-                    if vm.healthBleConnected { return .pass("Connected") }
+            RecoveryStep(label: "CHECKING API") {
+                guard let url = URL(string: base + "/camera/status") else { return .fail("Bad URL") }
+                var req = URLRequest(url: url); req.timeoutInterval = 5
+                if let (_, resp) = try? await URLSession.shared.data(for: req),
+                   (resp as? HTTPURLResponse)?.statusCode == 200 {
+                    return .pass("200 OK")
                 }
-                return .fail("BLE not connecting")
+                return .fail("API not responding")
             },
             RecoveryStep(label: "VERIFYING") {
                 await vm.refreshHealth()
-                if vm.healthBridgeReachable && vm.healthBleConnected { return .pass("All clear") }
-                return vm.healthBridgeReachable ? .fail("BLE not connected") : .fail("Bridge still down")
+                return vm.camReachable ? .pass("All clear") : .fail("Still unreachable")
             },
         ]
     }
 }
 
-// MARK: – BLE / ESP32 detail
+// MARK: – CARD detail
 
-struct BleDetailView: View {
+struct CardDetailView: View {
     @EnvironmentObject var vm: DataViewModel
-    @State private var showingRecovery = false
 
     var body: some View {
         VStack(spacing: 0) {
-            if showingRecovery {
-                RecoveryFlowView(title: "RECOVER ESP32",
-                                 steps: bleSteps(),
-                                 onBack: { showingRecovery = false })
-            } else {
-                diagRow("BLE STATE",
-                        value:      vm.healthEsp32BleState,
-                        valueColor: vm.healthBleConnected ? Theme.accentOrange : Theme.dotRed)
-                HRule()
-                diagRow("BRIDGE",
-                        value:      vm.healthBridgeReachable ? "Reachable" : "Unreachable",
-                        valueColor: vm.healthBridgeReachable ? Theme.accentOrange : Theme.secondary)
-                HRule()
-                diagRecoveryButton("RECOVER ESP32") { showingRecovery = true }
-            }
+            diagRow("MEDIA SLOT",
+                    value:      vm.camActiveMediaSlot,
+                    valueColor: vm.camActiveMediaSlot == "—" ? Theme.dotRed : Theme.accentOrange)
+            HRule()
+            diagRow("RECORDING",
+                    value:      vm.camRecording ? "Recording" : "Idle",
+                    valueColor: vm.camRecording ? Theme.dotRed : Theme.secondary)
+            HRule()
+            diagRow("TIME REMAINING",
+                    value:      vm.camRemainingRecordTime.map { "\($0 / 60)m \($0 % 60)s" } ?? "—",
+                    valueColor: Theme.secondary)
+            HRule()
+            Text("PHYSICAL MEDIA — SITE VISIT REQUIRED FOR SWAP")
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .tracking(1.0)
+                .foregroundStyle(Theme.tertiary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 10)
         }
-    }
-
-    private func bleSteps() -> [RecoveryStep] {
-        let base = AppSettings.shared.piServerURL
-        return [
-            RecoveryStep(label: "SENDING ESP32 RESET") {
-                guard let url = URL(string: base + "/system/reset-esp32") else { return .fail("Bad URL") }
-                var req = URLRequest(url: url); req.httpMethod = "POST"; req.timeoutInterval = 8
-                _ = try? await URLSession.shared.data(for: req)
-                return .pass("Sent")
-            },
-            RecoveryStep(label: "WAITING FOR DISCONNECT") {
-                for _ in 0..<10 {
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    await vm.refreshHealth()
-                    if !vm.healthBleConnected { return .pass("Disconnected") }
-                }
-                return .pass("Cycling")
-            },
-            RecoveryStep(label: "WAITING FOR RECONNECT") {
-                for _ in 0..<24 {
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    await vm.refreshHealth()
-                    if vm.healthBleConnected { return .pass("Connected") }
-                }
-                return .fail("BLE not reconnecting")
-            },
-            RecoveryStep(label: "VERIFYING") {
-                await vm.refreshHealth()
-                return vm.healthBleConnected ? .pass("Connected") : .fail("Still disconnected")
-            },
-        ]
     }
 }
 

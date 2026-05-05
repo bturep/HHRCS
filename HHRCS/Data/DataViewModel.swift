@@ -88,19 +88,28 @@ final class DataViewModel: ObservableObject {
     @Published var astro:        AstroData?
     @Published var astroError:   String?
 
-    // MARK: – System health (polled from Pi /status every 5s)
-    @Published var healthPiReachable:     Bool    = false
-    @Published var healthBridgeReachable: Bool    = false
-    @Published var healthBleConnected:    Bool    = false
-    @Published var healthYoloRunning:     Bool    = false
-    @Published var healthYoloSimMode:     Bool    = true
-    @Published var healthIsRecording:     Bool    = false
-    @Published var healthEsp32BleState:   String  = "—"
-    @Published var healthSsdMounted:            Bool    = false
-    @Published var healthSsdFreePct:            Double  = 0
-    @Published var healthDetectLastAgoSec:      Double? = nil
-    @Published var healthLastPollAt:            Date?   = nil
-    @Published var healthLastError:             String? = nil
+    // MARK: – System health (polled from Pi /status every 2s)
+    @Published var healthPiReachable:          Bool    = false
+    @Published var healthYoloRunning:          Bool    = false
+    @Published var healthYoloSimMode:          Bool    = true
+    @Published var healthIsRecording:          Bool    = false
+    @Published var healthSsdMounted:           Bool    = false
+    @Published var healthSsdFreePct:           Double  = 0
+    @Published var healthDetectLastAgoSec:     Double? = nil
+    @Published var healthLastPollAt:           Date?   = nil
+    @Published var healthLastError:            String? = nil
+
+    // MARK: – Camera (BMPCC via ethernet REST API)
+    @Published var camReachable:            Bool    = false
+    @Published var camRecording:            Bool    = false
+    @Published var camCodec:                String  = "—"
+    @Published var camFrameRate:            String  = "—"
+    @Published var camResolution:           String  = "—"
+    @Published var camIso:                  Int?    = nil
+    @Published var camWhiteBalance:         Int?    = nil
+    @Published var camGain:                 Int?    = nil
+    @Published var camActiveMediaSlot:      String  = "—"
+    @Published var camRemainingRecordTime:  Int?    = nil
 
     // MARK: – Deployment
     @Published var deploymentChangeCount: Int = 0
@@ -119,11 +128,6 @@ final class DataViewModel: ObservableObject {
     private var logTask:          Task<Void, Never>?
     private var notificationTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
-
-    // Cold-start guard: don't let a stale Pi "recording: true" make the button
-    // orange on first launch. isRecording can only go true via the poll after
-    // we've first received at least one "not recording" response.
-    private var seenNotRecording = false
 
     private let detectionClasses = ["deer", "fox", "raccoon", "coyote",
                                     "bird", "squirrel", "cat", "person"]
@@ -230,30 +234,45 @@ final class DataViewModel: ObservableObject {
             let box:        [Double]   // [x, y, w, h] normalized 0–1
         }
 
-        let esp32Connected:       Bool?
-        let esp32BridgeReachable: Bool?
-        let esp32BleState:        String?
-        let yoloRunning:          Bool?
-        let yoloSimMode:          Bool?
-        let ssdMounted:                    Bool?
-        let ssdFreePct:                    Double?
-        let detectorLastInferenceAgoSec:   Double?
-        let recording:                     Bool?
-        let machineState:         String?
-        let detections:           [DetectionItem]?
+        let yoloRunning:                 Bool?
+        let yoloSimMode:                 Bool?
+        let ssdMounted:                  Bool?
+        let ssdFreePct:                  Double?
+        let detectorLastInferenceAgoSec: Double?
+        let recording:                   Bool?
+        let machineState:                String?
+        let detections:                  [DetectionItem]?
+
+        let camReachable:            Bool?
+        let camRecording:            Bool?
+        let camCodec:                String?
+        let camFrameRate:            String?
+        let camResolution:           String?
+        let camIso:                  Int?
+        let camWhiteBalance:         Int?
+        let camGain:                 Int?
+        let camActiveMediaSlot:      String?
+        let camRemainingRecordTime:  Int?
 
         enum CodingKeys: String, CodingKey {
-            case esp32Connected       = "esp32_connected"
-            case esp32BridgeReachable = "esp32_bridge_reachable"
-            case esp32BleState        = "esp32_ble_state"
-            case yoloRunning          = "yolo_running"
-            case yoloSimMode          = "yolo_sim_mode"
+            case yoloRunning                 = "yolo_running"
+            case yoloSimMode                 = "yolo_sim_mode"
             case ssdMounted                  = "ssd_mounted"
             case ssdFreePct                  = "ssd_free_pct"
             case detectorLastInferenceAgoSec = "detector_last_inference_ago_seconds"
             case recording
-            case machineState         = "machine_state"
+            case machineState                = "machine_state"
             case detections
+            case camReachable                = "cam_reachable"
+            case camRecording                = "cam_recording"
+            case camCodec                    = "cam_codec"
+            case camFrameRate                = "cam_frame_rate"
+            case camResolution               = "cam_resolution"
+            case camIso                      = "cam_iso"
+            case camWhiteBalance             = "cam_white_balance"
+            case camGain                     = "cam_gain"
+            case camActiveMediaSlot          = "cam_active_media_slot"
+            case camRemainingRecordTime      = "cam_remaining_record_time"
         }
     }
 
@@ -283,31 +302,35 @@ final class DataViewModel: ObservableObject {
             let (data, _) = try await URLSession.shared.data(for: req)
             UserDefaults.standard.set(data, forKey: "lastKnownStatus")
             let poll = try JSONDecoder().decode(HealthPoll.self, from: data)
-            healthPiReachable     = true
-            healthBridgeReachable = poll.esp32BridgeReachable ?? false
-            let wasConnected      = healthBleConnected
-            healthBleConnected    = poll.esp32Connected       ?? false
-            healthEsp32BleState   = poll.esp32BleState        ?? "—"
-            healthYoloRunning     = poll.yoloRunning          ?? false
-            healthYoloSimMode     = poll.yoloSimMode          ?? true
-            healthIsRecording     = poll.recording            ?? false
-            let bleUp             = poll.esp32Connected       ?? false
-            // Re-arm the cold-start guard on every BLE reconnect so a stale
-            // recording:true from the Pi can't immediately light the button.
-            if bleUp && !wasConnected { seenNotRecording = false }
-            let piRecording       = (poll.recording ?? false) && bleUp
-            if !piRecording { seenNotRecording = true }
-            isRecording           = seenNotRecording ? piRecording : false
-            healthSsdMounted         = poll.ssdMounted                  ?? false
-            healthSsdFreePct         = poll.ssdFreePct                  ?? 0
+            healthPiReachable        = true
+            healthYoloRunning        = poll.yoloRunning          ?? false
+            healthYoloSimMode        = poll.yoloSimMode          ?? true
+            healthIsRecording        = poll.recording            ?? false
+            healthSsdMounted         = poll.ssdMounted           ?? false
+            healthSsdFreePct         = poll.ssdFreePct           ?? 0
             healthDetectLastAgoSec   = poll.detectorLastInferenceAgoSec
             healthLastPollAt         = Date()
-            healthLastError       = nil
+            healthLastError          = nil
+
+            // Camera (ethernet REST API)
+            camReachable           = poll.camReachable        ?? false
+            camRecording           = poll.camRecording        ?? false
+            camCodec               = poll.camCodec            ?? "—"
+            camFrameRate           = poll.camFrameRate        ?? "—"
+            camResolution          = poll.camResolution       ?? "—"
+            camIso                 = poll.camIso
+            camWhiteBalance        = poll.camWhiteBalance
+            camGain                = poll.camGain
+            camActiveMediaSlot     = poll.camActiveMediaSlot  ?? "—"
+            camRemainingRecordTime = poll.camRemainingRecordTime
+
+            // isRecording is driven purely by the camera's authoritative state
+            isRecording = camRecording
 
             // Machine state & YOLO lock
             let ms = poll.machineState ?? "IDLE"
             machineState = ms
-            yoloLocked   = (ms == "ACTIVE") && (poll.recording ?? false)
+            yoloLocked   = (ms == "ACTIVE") && camRecording
 
             // Real detections from Pi
             if let items = poll.detections {
@@ -537,25 +560,20 @@ final class DataViewModel: ObservableObject {
     }
 
     var hasSystemAlert: Bool {
-        !healthPiReachable || !healthBridgeReachable || healthEsp32BleState != "Connected"
+        !healthPiReachable || !camReachable
     }
 
     // MARK: – Pi commands
 
-    // BMPCC record via ESP32 bridge
+    // BMPCC record via Pi → ethernet → camera REST API
     func toggleBmpccRecord() async {
-        print("[REC] toggleBmpccRecord — isRecording=\(isRecording), bleConnected=\(healthBleConnected), bleState=\(healthEsp32BleState)")
         if isRecording {
-            print("[REC] → STOP")
-            await sendPiCommand("/control/record/stop")
-            isRecording = false
+            await sendPiCommandPUT("/camera/record/stop")
         } else {
-            print("[REC] → START")
-            await sendPiCommand("/control/record/start")
-            isRecording = true
+            await sendPiCommandPUT("/camera/record/start")
             await captureAndStoreSnapshot(triggerType: "manual")
         }
-        print("[REC] done — isRecording now \(isRecording)")
+        await pollHealth()
     }
 
     // Pi Camera Module 3 record — visual-only toggle, no Pi endpoint yet
@@ -646,6 +664,15 @@ final class DataViewModel: ObservableObject {
         } else {
             print("[Pi] POST \(path) — network error / timeout")
         }
+    }
+
+    private func sendPiCommandPUT(_ path: String) async {
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty, let url = URL(string: base + path) else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        req.timeoutInterval = 5
+        _ = try? await URLSession.shared.data(for: req)
     }
 
     private func sendPiCommandJSON(_ path: String, body: [String: Any]) async {

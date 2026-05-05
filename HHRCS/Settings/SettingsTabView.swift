@@ -82,11 +82,11 @@ struct SettingsTabView: View {
         SectionCard(title: "DIAGNOSTIC") {
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
-                    diagnosticDotButton(.pi,     status: vm.healthPiReachable ? .green : .red)
-                    diagnosticDotButton(.bridge, status: vm.healthBridgeReachable ? .green : .red)
-                    diagnosticDotButton(.ble,    status: vm.healthBleConnected ? .green : .red)
-                    diagnosticDotButton(.yolo,   status: yoloStatus)
-                    diagnosticDotButton(.ssd,    status: ssdStatus)
+                    diagnosticDotButton(.pi,   status: vm.healthPiReachable ? .green : .red)
+                    diagnosticDotButton(.cam,  status: camStatus)
+                    diagnosticDotButton(.yolo, status: yoloStatus)
+                    diagnosticDotButton(.card, status: cardStatus)
+                    diagnosticDotButton(.ssd,  status: ssdStatus)
                 }
 
                 if let dot = activeDot {
@@ -148,11 +148,11 @@ struct SettingsTabView: View {
     @ViewBuilder
     private func dotDetailPanel(_ dot: DiagnosticDot) -> some View {
         switch dot {
-        case .pi:     PiDetailView().environmentObject(vm)
-        case .bridge: BridgeDetailView().environmentObject(vm)
-        case .ble:    BleDetailView().environmentObject(vm)
-        case .yolo:   YoloDetailView().environmentObject(vm)
-        case .ssd:    SsdDetailView().environmentObject(vm)
+        case .pi:   PiDetailView().environmentObject(vm)
+        case .cam:  CamDetailView().environmentObject(vm)
+        case .yolo: YoloDetailView().environmentObject(vm)
+        case .card: CardDetailView().environmentObject(vm)
+        case .ssd:  SsdDetailView().environmentObject(vm)
         }
     }
 
@@ -200,6 +200,16 @@ struct SettingsTabView: View {
                 .frame(maxHeight: 170)
             }
         }
+    }
+
+    private var camStatus: HealthStatus {
+        guard vm.healthPiReachable else { return .grey }
+        return vm.camReachable ? .green : .red
+    }
+
+    private var cardStatus: HealthStatus {
+        guard vm.camReachable else { return .grey }
+        return vm.camActiveMediaSlot == "—" ? .red : .green
     }
 
     private var yoloStatus: HealthStatus {

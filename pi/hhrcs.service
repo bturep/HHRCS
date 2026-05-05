@@ -1,19 +1,27 @@
 [Unit]
-Description=HHRCS — Hunter House Remote Camera System
-After=network-online.target
-Wants=network-online.target
+Description=HHRCS Main API (port 5001)
+After=network.target
 
 [Service]
 Type=simple
 User=pi
 WorkingDirectory=/home/pi/hhrcs
-ExecStart=/home/pi/hhrcs/venv/bin/python /home/pi/hhrcs/api_server.py
-Restart=always
-RestartSec=10
-StandardOutput=journal
-StandardError=journal
+ExecStart=/home/pi/hhrcs/venv/bin/python api_server.py
+Restart=on-failure
+RestartSec=5
+
+# Detector backend selection
+# DETECTOR_ENABLED=1        — enable real MegaDetectorLite ONNX inference
+# DETECTOR_ENABLED=0        — simulation mode (no model needed)
+# DETECTOR_BACKEND          — reserved for future swaps (e.g. megadetector_v2)
+# DETECTOR_MODEL_PATH       — override model file location
+# DETECTOR_CONFIDENCE_THRESHOLD — override confidence gate (default 0.6)
+# DETECTOR_INPUT_SIZE       — override model input size in px (default 640)
 Environment=PORT=5001
-Environment=YOLO_ENABLED=1
+Environment=DETECTOR_ENABLED=1
+Environment=DETECTOR_BACKEND=megadetector
+Environment=DETECTOR_MODEL_PATH=/home/pi/hhrcs/models/md_v1000_spruce.onnx
+Environment=ANTHROPIC_API_KEY=SET_ON_DEVICE_NOT_IN_REPO
 
 [Install]
 WantedBy=multi-user.target

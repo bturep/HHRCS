@@ -151,9 +151,27 @@ struct LaunchView: View {
             return
         }
 
-        // Phase 2: ESTABLISHING LINK — 3s
+        // Phase 2: ESTABLISHING LINK — wait for camReachable (max 4s)
         phase = .p2
-        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        let base2 = AppSettings.shared.piServerURL
+        var camUp = false
+        if !base2.isEmpty, let camURL = URL(string: base2 + "/camera/status") {
+            let deadline = Date().addingTimeInterval(4)
+            while Date() < deadline {
+                var req = URLRequest(url: camURL)
+                req.timeoutInterval = 1.5
+                if let (data, _) = try? await URLSession.shared.data(for: req),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let reachable = json["cam_reachable"] as? Bool, reachable {
+                    camUp = true
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+        }
+        if !camUp {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
 
         // Phase 3: CONNECTING TO FIELD — 4s
         phase = .p3
@@ -201,8 +219,8 @@ struct LaunchView: View {
         if let cached = UserDefaults.standard.data(forKey: "lastKnownStatus"),
            let json = try? JSONSerialization.jsonObject(with: cached) as? [String: Any] {
             var parts: [String] = []
-            if let sim = json["yolo_sim_mode"]   as? Bool   { parts.append(sim ? "sim" : "live") }
-            if let ble = json["esp32_ble_state"] as? String { parts.append("BLE \(ble.lowercased())") }
+            if let sim = json["yolo_sim_mode"] as? Bool { parts.append(sim ? "sim" : "live") }
+            if let cam = json["cam_reachable"] as? Bool { parts.append(cam ? "cam OK" : "cam unreachable") }
             parts.append("check power and network")
             return parts.joined(separator: " · ")
         }

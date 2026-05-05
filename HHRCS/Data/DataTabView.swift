@@ -7,6 +7,7 @@ struct DataTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                cameraSection
                 enclosureSection
                 weatherSection
                 astroSection
@@ -19,6 +20,50 @@ struct DataTabView: View {
         .refreshable {
             await vm.refreshWeather()
             await vm.refreshAstro()
+        }
+    }
+
+    // MARK: – Camera (BMPCC via ethernet)
+    private var cameraSection: some View {
+        SectionCard(title: "CAMERA") {
+            VStack(spacing: 12) {
+                HStack(alignment: .top, spacing: 0) {
+                    MetricCell(value: vm.camCodec, label: "CODEC")
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(value: vm.camFrameRate, label: "FRAME RATE")
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(value: vm.camResolution, label: "RESOLUTION")
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .frame(maxWidth: .infinity)
+
+                HStack(alignment: .top, spacing: 0) {
+                    MetricCell(value: vm.camIso.map { "\($0)" } ?? "—", label: "ISO")
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(value: vm.camWhiteBalance.map { "\($0)K" } ?? "—", label: "WHITE BAL")
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(value: vm.camGain.map { "\($0) dB" } ?? "—", label: "GAIN")
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .frame(maxWidth: .infinity)
+
+                HStack(alignment: .top, spacing: 0) {
+                    MetricCell(
+                        value:      vm.camRecording ? "YES" : "NO",
+                        label:      "RECORDING",
+                        valueColor: vm.camRecording ? Theme.dotRed : .white
+                    )
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(value: vm.camActiveMediaSlot, label: "MEDIA SLOT")
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(
+                        value: vm.camRemainingRecordTime.map { "\($0 / 60)m \($0 % 60)s" } ?? "—",
+                        label: "REC TIME LEFT"
+                    )
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .frame(maxWidth: .infinity)
+            }
         }
     }
 
