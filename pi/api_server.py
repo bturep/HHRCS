@@ -289,6 +289,7 @@ def status():
         "last_detection_time": sm_data["last_detection_time"],
         "countdown_remaining": sm_data["countdown_remaining"],
         "window_open": sm_data["window_open"],
+        "manual_override": sm_data["manual_override"],
 
         "temperature_c": sensor_data["temperature_c"],
         "humidity_pct": sensor_data["humidity_pct"],
@@ -555,6 +556,7 @@ def camera_status():
 @app.route("/camera/record/start", methods=["PUT", "POST"])
 def camera_record_start():
     global _next_clip_name
+    sm.manual_override = False
     clip = _next_clip_name
     _next_clip_name = ""
     ok = _cam_client.record_start(clip_name=clip)
@@ -563,6 +565,7 @@ def camera_record_start():
 @app.route("/camera/record/stop", methods=["PUT", "POST"])
 def camera_record_stop():
     ok = _cam_client.record_stop()
+    sm.force_idle()
     return jsonify({"ok": ok})
 
 @app.route("/camera/iso", methods=["PUT"])

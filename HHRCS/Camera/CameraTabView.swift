@@ -91,7 +91,7 @@ struct CameraTabView: View {
                     OperatorControlRow(
                         isOwner: settings.ownerModeEnabled,
                         isRecording: vm.isRecording,
-                        yoloLocked: vm.yoloLocked,
+                        captureIsPlaceholder: true,
                         onRecord: { Task { await vm.toggleBmpccRecord() } },
                         onCapture: { Task { await vm.captureBmpccStill() } }
                     ) { pageIndicator }
@@ -99,7 +99,7 @@ struct CameraTabView: View {
                     OperatorControlRow(
                         isOwner: settings.ownerModeEnabled,
                         isRecording: vm.isPiCamRecording,
-                        yoloLocked: false,
+                        captureIsPlaceholder: false,
                         onRecord: { vm.togglePiCamRecord() },
                         onCapture: { Task { await vm.captureStill() } }
                     ) { pageIndicator }
@@ -352,13 +352,12 @@ struct CameraTabView: View {
 private struct OperatorControlRow<Indicator: View>: View {
     let isOwner: Bool
     let isRecording: Bool
-    let yoloLocked: Bool
+    let captureIsPlaceholder: Bool
     let onRecord: () -> Void
     let onCapture: () -> Void
     @ViewBuilder let indicator: () -> Indicator
 
-    @State private var captureFlash          = false
-    @State private var showStopConfirmation  = false
+    @State private var captureFlash = false
 
     var body: some View {
         ZStack {
@@ -367,11 +366,7 @@ private struct OperatorControlRow<Indicator: View>: View {
                 Group {
                     if isOwner {
                         Button {
-                            if isRecording && yoloLocked {
-                                showStopConfirmation = true
-                            } else {
-                                onRecord()
-                            }
+                            onRecord()
                         } label: {
                             Image(systemName: isRecording ? "stop.circle.fill" : "record.circle")
                                 .symbolRenderingMode(.monochrome)
@@ -379,14 +374,6 @@ private struct OperatorControlRow<Indicator: View>: View {
                                 .foregroundStyle(isRecording ? Theme.recordingRed : Theme.tertiary)
                         }
                         .buttonStyle(.plain)
-                        .confirmationDialog(
-                            "YOLO-triggered recording active.",
-                            isPresented: $showStopConfirmation,
-                            titleVisibility: .visible
-                        ) {
-                            Button("Stop Recording", role: .destructive) { onRecord() }
-                            Button("Cancel", role: .cancel) {}
-                        }
                     } else {
                         Color.clear
                     }
@@ -398,18 +385,25 @@ private struct OperatorControlRow<Indicator: View>: View {
 
                 Group {
                     if isOwner {
-                        Button {
-                            withAnimation(.easeOut(duration: 0.08)) { captureFlash = true }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                                withAnimation(.easeIn(duration: 0.08)) { captureFlash = false }
+                        if captureIsPlaceholder {
+                            Text("HDMI PREVIEW")
+                                .font(Theme.dataLabel(size: 8))
+                                .tracking(Theme.labelTracking)
+                                .foregroundStyle(Color.white.opacity(0.4))
+                        } else {
+                            Button {
+                                withAnimation(.easeOut(duration: 0.08)) { captureFlash = true }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                    withAnimation(.easeIn(duration: 0.08)) { captureFlash = false }
+                                }
+                                onCapture()
+                            } label: {
+                                Image(systemName: "camera.aperture")
+                                    .font(.system(size: 24))
+                                    .foregroundStyle(captureFlash ? Theme.accent : Color.white.opacity(0.5))
                             }
-                            onCapture()
-                        } label: {
-                            Image(systemName: "camera.aperture")
-                                .font(.system(size: 24))
-                                .foregroundStyle(captureFlash ? Theme.accent : Color.white.opacity(0.5))
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     } else {
                         Color.clear
                     }

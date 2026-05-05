@@ -12,6 +12,8 @@ from config import CAMERA_BASE_URL, CAMERA_REQUEST_TIMEOUT
 
 log = logging.getLogger(__name__)
 
+_SLOT_MAP = {"sd0": "SD", "cf0": "CFast", "usb0": "USB"}
+
 
 class BMPCCCameraClient:
 
@@ -163,7 +165,8 @@ class BMPCCCameraClient:
         try:
             media = self.get_active_media()
             if media:
-                result["cam_active_media_slot"] = media.get("deviceName") or media.get("slot")
+                raw = media.get("deviceName") or media.get("slot")
+                result["cam_active_media_slot"] = _SLOT_MAP.get(raw, raw) if raw else None
         except Exception as e:
             log.warning(f"[cam] media fetch: {e}")
 
