@@ -2,8 +2,8 @@ import SwiftUI
 
 enum Theme {
     // MARK: – Colors
-    static let background           = Color(red: 0.039, green: 0.039, blue: 0.039) // #0A0A0A
-    static let cardBackground       = Color(red: 0.098, green: 0.098, blue: 0.090) // #191917
+    static let background           = Color.black                                   // #000000
+    static let cardBackground       = Color(white: 0.07)                           // #121212
     static let cardBackgroundActive = Color(red: 0.165, green: 0.125, blue: 0.094) // #2A2018
     static let accent             = Color(hex: "349beb") // #349beb
     static let accentColor       = Color(hex: "349beb") // #349beb

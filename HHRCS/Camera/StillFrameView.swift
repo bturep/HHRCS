@@ -163,7 +163,7 @@ struct FullscreenImageView: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .frame(maxWidth: .infinity)
-                        .background(Theme.cardBackground.opacity(0.75))
+                        .background(Theme.background.opacity(0.82))
                 }
             }
         }

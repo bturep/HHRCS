@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 private enum CameraPage: Int, CaseIterable {
     case still     = 0
@@ -376,6 +379,8 @@ private struct StillImagePage: View {
     var clippedLow:  Double  = 0
     var clippedHigh: Double  = 0
 
+    // Histogram visibility — long-press still image to toggle (BMPCC page only).
+    @AppStorage("histogramVisible") private var histogramVisible: Bool = true
     @State private var showFullscreen = false
 
     var body: some View {
@@ -388,6 +393,16 @@ private struct StillImagePage: View {
                         .resizable()
                         .scaledToFit()
                         .onTapGesture { showFullscreen = true }
+                        .simultaneousGesture(
+                            LongPressGesture(minimumDuration: 0.4)
+                                .onEnded { _ in
+                                    guard !bins.isEmpty else { return }
+                                    histogramVisible.toggle()
+                                    #if canImport(UIKit)
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    #endif
+                                }
+                        )
                 } else {
                     VStack(spacing: 10) {
                         Image(systemName: "photo")
@@ -407,15 +422,13 @@ private struct StillImagePage: View {
                             let elapsed = Int(max(0, ctx.date.timeIntervalSince(updated)))
                             Text("\(elapsed)s")
                                 .font(.system(size: 9, weight: .regular, design: .monospaced))
-                                .foregroundStyle(elapsed > 15
-                                    ? Theme.tertiary.opacity(0.35)
-                                    : Theme.tertiary)
+                                .foregroundStyle(Theme.tertiary.opacity(0.4))
                         }
                     }
                     Button { poller.refreshNow() } label: {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 12))
-                            .foregroundStyle(Theme.tertiary)
+                            .foregroundStyle(Theme.tertiary.opacity(0.4))
                     }
                     .buttonStyle(.plain)
                 }
@@ -423,12 +436,12 @@ private struct StillImagePage: View {
                 .padding(.top, 6)
             }
 
-            if !bins.isEmpty {
+            if !bins.isEmpty && histogramVisible {
                 HistogramView(bins: bins, clippedLow: clippedLow, clippedHigh: clippedHigh)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .frame(maxWidth: .infinity)
-                    .background(Theme.cardBackground)
+                    .background(Theme.background)
             }
         }
         #if os(iOS)
@@ -437,7 +450,7 @@ private struct StillImagePage: View {
                 FullscreenImageView(
                     image:       image,
                     isPresented: $showFullscreen,
-                    bins:        bins,
+                    bins:        histogramVisible ? bins : [],
                     clippedLow:  clippedLow,
                     clippedHigh: clippedHigh
                 )
@@ -449,7 +462,7 @@ private struct StillImagePage: View {
                 FullscreenImageView(
                     image:       image,
                     isPresented: $showFullscreen,
-                    bins:        bins,
+                    bins:        histogramVisible ? bins : [],
                     clippedLow:  clippedLow,
                     clippedHigh: clippedHigh
                 )

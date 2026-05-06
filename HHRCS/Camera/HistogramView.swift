@@ -1,5 +1,13 @@
 import SwiftUI
 
+// MARK: – Histogram style
+
+enum HistogramStyle: String {
+    case bars    = "bars"
+    case curve   = "curve"
+    case outline = "outline"
+}
+
 // MARK: – Histogram poller
 
 // Polls GET /hdmi/histogram every 5s; decodes the 64-bin JSON response.
@@ -61,18 +69,25 @@ final class HistogramPoller: ObservableObject {
 
 // MARK: – Histogram view
 
-// Renders 64 vertical bars. Bins 0 and 63 turn red if clipping exceeds 2%.
-// Clipping label appears below bars when either value exceeds 0.5%.
+// Single tap cycles style: bars → curve → outline → bars.
+// Long-press on the parent still image (BMPCC page only) toggles visibility.
+// Bins 0 and 63 highlighted red when clipping exceeds 2%.
+// Clipping label shown below when either value ≥ 0.5%.
 struct HistogramView: View {
     let bins:        [Int]
     let clippedLow:  Double
     let clippedHigh: Double
 
-    private static let barMaxHeight: CGFloat = 32
+    @AppStorage("histogramStyle") private var styleRaw: String = HistogramStyle.bars.rawValue
+
+    private var style: HistogramStyle { HistogramStyle(rawValue: styleRaw) ?? .bars }
+
+    private static let canvasHeight: CGFloat = 32
 
     var body: some View {
         VStack(spacing: 2) {
-            barsCanvas
+            mainCanvas
+                .onTapGesture { cycleStyle() }
             if clippedLow >= 0.005 || clippedHigh >= 0.005 {
                 Text(String(format: "CLIPPED  LOW %.1f%%  ·  HIGH %.1f%%",
                             clippedLow * 100, clippedHigh * 100))
@@ -82,26 +97,99 @@ struct HistogramView: View {
         }
     }
 
-    private var barsCanvas: some View {
-        Canvas { ctx, size in
-            guard !bins.isEmpty else { return }
-            let maxVal = CGFloat(bins.max() ?? 1)
-            let count  = CGFloat(bins.count)
-            let barW   = size.width / count
+    private func cycleStyle() {
+        let next: HistogramStyle
+        switch style {
+        case .bars:    next = .curve
+        case .curve:   next = .outline
+        case .outline: next = .bars
+        }
+        styleRaw = next.rawValue
+    }
 
-            for (i, bin) in bins.enumerated() {
-                let h = max(1, Self.barMaxHeight * CGFloat(bin) / maxVal)
-                let x = CGFloat(i) * barW
-                let rect = CGRect(x: x, y: size.height - h,
-                                  width: max(1, barW - 0.5), height: h)
-                let color: Color = {
-                    if i == 0 && clippedLow > 0.02              { return Theme.recordingRed }
-                    if i == bins.count - 1 && clippedHigh > 0.02 { return Theme.recordingRed }
-                    return Theme.tertiary
-                }()
-                ctx.fill(Path(rect), with: .color(color))
+    private var mainCanvas: some View {
+        Canvas { ctx, size in
+            guard !self.bins.isEmpty else { return }
+            let maxVal = CGFloat(self.bins.max() ?? 1)
+            let barW   = size.width / CGFloat(self.bins.count)
+
+            switch self.style {
+            case .bars:
+                for (i, bin) in self.bins.enumerated() {
+                    let h = max(1, Self.canvasHeight * CGFloat(bin) / maxVal)
+                    let x = CGFloat(i) * barW
+                    let rect = CGRect(x: x, y: size.height - h,
+                                      width: max(1, barW - 0.5), height: h)
+                    let color: Color = {
+                        if i == 0 && self.clippedLow > 0.02 { return Theme.recordingRed }
+                        if i == self.bins.count - 1 && self.clippedHigh > 0.02 { return Theme.recordingRed }
+                        return Theme.tertiary
+                    }()
+                    ctx.fill(Path(rect), with: .color(color))
+                }
+
+            case .curve:
+                let path = self.smoothPath(size: size, maxVal: maxVal, barW: barW, closed: true)
+                ctx.fill(path, with: .color(Theme.tertiary.opacity(0.6)))
+                if self.clippedLow > 0.02 {
+                    ctx.fill(Path(CGRect(x: 0, y: 0, width: barW, height: size.height)),
+                             with: .color(Theme.recordingRed.opacity(0.5)))
+                }
+                if self.clippedHigh > 0.02 {
+                    ctx.fill(Path(CGRect(x: size.width - barW, y: 0, width: barW, height: size.height)),
+                             with: .color(Theme.recordingRed.opacity(0.5)))
+                }
+
+            case .outline:
+                let path = self.smoothPath(size: size, maxVal: maxVal, barW: barW, closed: false)
+                ctx.stroke(path, with: .color(Theme.secondary), lineWidth: 1)
+                if self.clippedLow > 0.02 {
+                    var tick = Path()
+                    tick.move(to:    CGPoint(x: 0.5, y: 0))
+                    tick.addLine(to: CGPoint(x: 0.5, y: size.height))
+                    ctx.stroke(tick, with: .color(Theme.recordingRed), lineWidth: 1)
+                }
+                if self.clippedHigh > 0.02 {
+                    var tick = Path()
+                    tick.move(to:    CGPoint(x: size.width - 0.5, y: 0))
+                    tick.addLine(to: CGPoint(x: size.width - 0.5, y: size.height))
+                    ctx.stroke(tick, with: .color(Theme.recordingRed), lineWidth: 1)
+                }
             }
         }
-        .frame(height: Self.barMaxHeight)
+        .frame(height: Self.canvasHeight)
+    }
+
+    // Mid-point quadratic bezier through bin-top points.
+    // closed=true adds baseline edges to form a filled area shape.
+    private func smoothPath(size: CGSize, maxVal: CGFloat, barW: CGFloat, closed: Bool) -> Path {
+        let pts: [CGPoint] = bins.enumerated().map { i, bin in
+            let h = max(1, Self.canvasHeight * CGFloat(bin) / maxVal)
+            return CGPoint(x: barW * (CGFloat(i) + 0.5), y: size.height - h)
+        }
+        guard pts.count >= 2 else { return Path() }
+
+        var p = Path()
+
+        if closed {
+            p.move(to:    CGPoint(x: 0, y: size.height))
+            p.addLine(to: pts[0])
+        } else {
+            p.move(to: pts[0])
+        }
+
+        for i in 1..<pts.count {
+            let mid = CGPoint(x: (pts[i-1].x + pts[i].x) / 2,
+                              y: (pts[i-1].y + pts[i].y) / 2)
+            p.addQuadCurve(to: mid, control: pts[i-1])
+        }
+        p.addLine(to: pts.last!)
+
+        if closed {
+            p.addLine(to: CGPoint(x: size.width, y: size.height))
+            p.closeSubpath()
+        }
+
+        return p
     }
 }

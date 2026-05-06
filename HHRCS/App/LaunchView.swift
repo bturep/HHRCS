@@ -11,7 +11,7 @@ struct LaunchView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Theme.background.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: -6) {
                 letterRow(letter: "H", word: "UNTER")
