@@ -26,6 +26,7 @@ struct CameraTabView: View {
     @State private var showWBPopover     = false
     @State private var showShutterPopover = false
     @State private var showYoloPopover   = false
+    @State private var overlayEnabled    = false
 
     @StateObject private var mjpegPlayer = MJPEGPlayer(
         url: URL(string: "http://raspberrypi.local:5001/stream")!
@@ -254,6 +255,28 @@ struct CameraTabView: View {
                 }
             }
             .font(.system(size: 11, weight: .regular, design: .monospaced))
+
+            // HUD overlay toggle
+            Spacer().frame(width: 12)
+            Button {
+                overlayEnabled.toggle()
+                vm.toggleBmpccOverlay()
+            } label: {
+                Text("HUD")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .tracking(1.5)
+                    .foregroundStyle(overlayEnabled ? Theme.accentColor : Theme.tertiary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 2)
+                            .stroke(
+                                overlayEnabled ? Theme.accentColor.opacity(0.5) : Theme.tertiary.opacity(0.4),
+                                lineWidth: Theme.ruleWidth
+                            )
+                    )
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 12)
         .frame(height: 32)

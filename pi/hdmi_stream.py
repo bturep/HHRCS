@@ -7,11 +7,11 @@ from config import HDMI_DEVICE, HDMI_WIDTH, HDMI_HEIGHT, HDMI_FPS
 
 log = logging.getLogger(__name__)
 
-_BLACK_JPEG: bytes = cv2.imencode(
-    ".jpg",
-    __import__("numpy").zeros((HDMI_HEIGHT, HDMI_WIDTH, 3), dtype=__import__("numpy").uint8),
-    [cv2.IMWRITE_JPEG_QUALITY, 50],
-)[1].tobytes()
+
+def _is_complete_jpeg(data: bytes) -> bool:
+    return (len(data) >= 4
+            and data[:2] == b'\xff\xd8'
+            and data[-2:] == b'\xff\xd9')
 
 
 class HDMIStreamer:
@@ -28,6 +28,7 @@ class HDMIStreamer:
             log.warning(f"HDMIStreamer: could not open {HDMI_DEVICE} — capture card absent?")
             return
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        cap.set(cv2.CAP_PROP_FORMAT, -1)      # skip decode — keep raw MJPEG bytes
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, HDMI_WIDTH)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HDMI_HEIGHT)
         cap.set(cv2.CAP_PROP_FPS, HDMI_FPS)
@@ -62,20 +63,17 @@ class HDMIStreamer:
             return self._latest
 
     def generate_mjpeg(self):
-        deadline = time.time() + 2.0
-        while self._latest is None and time.time() < deadline:
-            time.sleep(0.05)
-
         interval = 1.0 / HDMI_FPS
         while True:
             try:
-                frame = self.capture_jpeg() or _BLACK_JPEG
-                yield (
-                    b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n\r\n"
-                    + frame
-                    + b"\r\n"
-                )
+                frame = self.capture_jpeg()
+                if frame is not None and _is_complete_jpeg(frame):
+                    yield (
+                        b"--frame\r\n"
+                        b"Content-Type: image/jpeg\r\n\r\n"
+                        + frame
+                        + b"\r\n"
+                    )
                 time.sleep(interval)
             except GeneratorExit:
                 break
@@ -85,12 +83,22 @@ class HDMIStreamer:
 
     def _read_loop(self):
         while self._running and self._cap and self._cap.isOpened():
-            ok, frame = self._cap.read()
+            ok = self._cap.grab()
             if not ok:
                 time.sleep(0.05)
                 continue
-            ok2, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            if ok2:
+            ok, buf = self._cap.retrieve()
+            if not ok or buf is None:
+                continue
+            raw = buf.tobytes()
+            if _is_complete_jpeg(raw):
+                # V4L2 returned raw MJPEG bytes — use directly
                 with self._lock:
-                    self._latest = buf.tobytes()
+                    self._latest = raw
+            elif buf.ndim >= 2:
+                # Fallback: OpenCV decoded the frame; re-encode to JPEG
+                ok2, enc = cv2.imencode(".jpg", buf, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                if ok2:
+                    with self._lock:
+                        self._latest = enc.tobytes()
         log.info("HDMIStreamer._read_loop: exiting")

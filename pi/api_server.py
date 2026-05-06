@@ -624,16 +624,22 @@ def camera_set_clip_name():
 
 # ── MJPEG stream ───────────────────────────────────────────────────────────────
 
+def _is_complete_jpeg(data: bytes) -> bool:
+    return (len(data) >= 4
+            and data[:2] == b'\xff\xd8'
+            and data[-2:] == b'\xff\xd9')
+
+
 def _mjpeg_frames():
     while True:
         jpeg = detector.capture_jpeg()
-        if jpeg:
+        if jpeg and _is_complete_jpeg(jpeg):
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
             )
         else:
-            time.sleep(0.2)
+            time.sleep(0.033)
 
 @app.route("/stream")
 def stream():
@@ -681,6 +687,11 @@ def hdmi_stills_latest():
     with open(path, "rb") as f:
         data = f.read()
     return Response(data, mimetype="image/jpeg")
+
+@app.route("/camera/monitor/overlay", methods=["POST"])
+def camera_toggle_overlay():
+    ok = camera.toggle_overlay()
+    return jsonify({"ok": ok})
 
 # ── Event bus endpoints ────────────────────────────────────────────────────────
 

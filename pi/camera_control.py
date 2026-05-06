@@ -59,6 +59,13 @@ class CameraControl:
     def trigger_still(self):
         log.info("[cam] trigger_still — not implemented over REST API")
 
+    def toggle_overlay(self) -> bool:
+        data = _client._get("/video/outputOverlay")
+        if data is None:
+            return False
+        current = bool(data.get("enabled", data.get("overlayEnabled", False)))
+        return _client._put("/video/outputOverlay", {"enabled": not current})
+
     # ── State ──────────────────────────────────────────────────────────────────
 
     @property
