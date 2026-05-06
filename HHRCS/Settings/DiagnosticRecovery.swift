@@ -17,6 +17,7 @@ enum DiagnosticDot: String, CaseIterable {
     case yolo = "YOLO"
     case card = "CARD"
     case ssd  = "SSD"
+    case hdmi = "HDMI"
 }
 
 // MARK: – Recovery step model
@@ -399,6 +400,31 @@ struct SsdDetailView: View {
         if vm.healthSsdFreePct < 5  { return Theme.dotRed }
         if vm.healthSsdFreePct < 10 { return Theme.dotAmber }
         return Theme.accentColor
+    }
+}
+
+// MARK: – HDMI detail
+
+struct HdmiDetailView: View {
+    @EnvironmentObject var vm: DataViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            diagRow("STATUS",
+                    value:      vm.hdmiReachable ? "Streaming" : "Offline",
+                    valueColor: vm.hdmiReachable ? Theme.accentColor : Theme.dotRed)
+            HRule()
+            diagRow("DEVICE", value: "/dev/video2", valueColor: Theme.secondary)
+            HRule()
+            diagRow("FORMAT", value: "MJPEG 1920×1080 @ 25fps", valueColor: Theme.secondary)
+            HRule()
+            Text("GUERMOK USB2 VIDEO CAPTURE — CHECK USB CONNECTION")
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .tracking(1.0)
+                .foregroundStyle(Theme.tertiary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 10)
+        }
     }
 }
 

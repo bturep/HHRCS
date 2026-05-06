@@ -30,6 +30,9 @@ struct CameraTabView: View {
     @StateObject private var mjpegPlayer = MJPEGPlayer(
         url: URL(string: "http://raspberrypi.local:5001/stream")!
     )
+    @StateObject private var hdmiPlayer = MJPEGPlayer(
+        url: URL(string: "http://raspberrypi.local:5001/hdmi-stream")!
+    )
 
     private var isLandscape: Bool { orientationObserver.orientation.isLandscape }
 
@@ -44,12 +47,32 @@ struct CameraTabView: View {
         return URL(string: "http://raspberrypi.local:5001/stream")!
     }
 
+    private var hdmiStreamURL: URL {
+        if !settings.piServerURL.isEmpty,
+           var c = URLComponents(string: settings.piServerURL),
+           c.host != nil {
+            c.path  = "/hdmi-stream"
+            c.query = nil
+            if let url = c.url { return url }
+        }
+        return URL(string: "http://raspberrypi.local:5001/hdmi-stream")!
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             Theme.background.ignoresSafeArea()
 
             TabView(selection: $currentPage) {
-                StillFrameView()
+                MJPEGStreamView(player: hdmiPlayer)
+                    .onAppear {
+                        print("[MJPEG] BMPCC page appeared url=\(hdmiStreamURL)")
+                        hdmiPlayer.streamURL = hdmiStreamURL
+                        hdmiPlayer.start()
+                    }
+                    .onDisappear {
+                        print("[MJPEG] BMPCC page disappeared — stopping HDMI")
+                        hdmiPlayer.stop()
+                    }
                     .padding(.top, 32)
                     .padding(.bottom, 54)
                     .tag(CameraPage.still)
@@ -91,9 +114,9 @@ struct CameraTabView: View {
                     OperatorControlRow(
                         isOwner: settings.ownerModeEnabled,
                         isRecording: vm.isRecording,
-                        captureIsPlaceholder: true,
+                        captureIsPlaceholder: false,
                         onRecord: { Task { await vm.toggleBmpccRecord() } },
-                        onCapture: { Task { await vm.captureBmpccStill() } }
+                        onCapture: { Task { await vm.captureHdmiStill() } }
                     ) { pageIndicator }
                 case .live:
                     OperatorControlRow(
@@ -123,14 +146,25 @@ struct CameraTabView: View {
                 mjpegPlayer.start()
             }
         }
+        .onChange(of: hdmiStreamURL) { _, url in
+            hdmiPlayer.streamURL = url
+            if currentPage == .still {
+                hdmiPlayer.stop()
+                hdmiPlayer.start()
+            }
+        }
         .onChange(of: isActive) { _, active in
             if active {
-                if currentPage == .live || currentPage == .detection {
+                if currentPage == .still {
+                    hdmiPlayer.streamURL = hdmiStreamURL
+                    hdmiPlayer.start()
+                } else if currentPage == .live || currentPage == .detection {
                     mjpegPlayer.streamURL = streamURL
                     mjpegPlayer.start()
                 }
             } else {
                 mjpegPlayer.stop()
+                hdmiPlayer.stop()
             }
         }
     }

@@ -81,12 +81,15 @@ struct SettingsTabView: View {
     private var diagnosticCard: some View {
         SectionCard(title: "DIAGNOSTIC") {
             VStack(spacing: 0) {
+                advisoryLine
+
                 HStack(spacing: 0) {
                     diagnosticDotButton(.pi,   status: vm.healthPiReachable ? .green : .red)
                     diagnosticDotButton(.cam,  status: camStatus)
                     diagnosticDotButton(.yolo, status: yoloStatus)
                     diagnosticDotButton(.card, status: cardStatus)
                     diagnosticDotButton(.ssd,  status: ssdStatus)
+                    diagnosticDotButton(.hdmi, status: hdmiStatus)
                 }
 
                 if let dot = activeDot {
@@ -153,6 +156,7 @@ struct SettingsTabView: View {
         case .yolo: YoloDetailView().environmentObject(vm)
         case .card: CardDetailView().environmentObject(vm)
         case .ssd:  SsdDetailView().environmentObject(vm)
+        case .hdmi: HdmiDetailView().environmentObject(vm)
         }
     }
 
@@ -223,6 +227,30 @@ struct SettingsTabView: View {
         if vm.healthSsdFreePct < 5  { return .red }
         if vm.healthSsdFreePct < 10 { return .yellow }
         return .green
+    }
+
+    private var hdmiStatus: HealthStatus {
+        guard vm.healthPiReachable else { return .grey }
+        return vm.hdmiReachable ? .green : .red
+    }
+
+    @ViewBuilder
+    private var advisoryLine: some View {
+        if !vm.healthPiReachable {
+            Text("PI UNREACHABLE — CHECK NETWORK")
+                .font(.system(size: 8, weight: .regular, design: .monospaced))
+                .tracking(1.2)
+                .foregroundStyle(Theme.dotRed)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+        } else if !vm.hdmiReachable {
+            Text("HDMI OFFLINE — CHECK CAPTURE CARD")
+                .font(.system(size: 8, weight: .regular, design: .monospaced))
+                .tracking(1.2)
+                .foregroundStyle(Theme.accentColor)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+        }
     }
 
     // MARK: – DEPLOYMENT

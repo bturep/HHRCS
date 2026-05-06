@@ -82,5 +82,11 @@ NTFY_BASE_URL = "https://ntfy.sh"
 NOTIFIER_INTERVAL_SECONDS = 300
 NOTIFIER_DEDUP_HOURS = 6
 
+# ── HDMI capture card (Guermok USB2 Video) ────────────────────────────────────
+HDMI_DEVICE = "/dev/video2"
+HDMI_WIDTH  = 1920
+HDMI_HEIGHT = 1080
+HDMI_FPS    = 25
+
 # ── Layer 1 push notifications (in-app) ────────────────────────────────────────
 NOTIFICATIONS_MAX_STORED = 500

@@ -171,6 +171,9 @@ class StateMachine:
             _emit("state.transition", {"from_state": prev.value, "to_state": self.state.value, "reason": "manual override stop"})
             self._notify_state_change()
 
+    def is_recording(self) -> bool:
+        return self.state != RecordState.IDLE
+
     def force_stop(self):
         with self._lock:
             self._cancel_timer()

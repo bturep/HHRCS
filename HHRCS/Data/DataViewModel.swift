@@ -81,6 +81,9 @@ final class DataViewModel: ObservableObject {
     @Published var machineState: String     = "IDLE"
     @Published var detections:   [Detection] = []
 
+    // MARK: – HDMI
+    @Published var hdmiReachable: Bool = false
+
     // MARK: – Connectivity
     @Published var lastPollAt: Date = Date()
 
@@ -279,6 +282,8 @@ final class DataViewModel: ObservableObject {
         let detections:                  [DetectionItem]?
         let storage:                     StorageInfo?
 
+        let hdmiReachable:           Bool?
+
         let camReachable:            Bool?
         let camRecording:            Bool?
         let camCodec:                String?
@@ -300,6 +305,7 @@ final class DataViewModel: ObservableObject {
             case machineState                = "machine_state"
             case detections
             case storage
+            case hdmiReachable               = "hdmi_reachable"
             case camReachable                = "cam_reachable"
             case camRecording                = "cam_recording"
             case camCodec                    = "cam_codec"
@@ -348,6 +354,8 @@ final class DataViewModel: ObservableObject {
             healthDetectLastAgoSec   = poll.detectorLastInferenceAgoSec
             healthLastPollAt         = Date()
             healthLastError          = nil
+
+            hdmiReachable = poll.hdmiReachable ?? false
 
             // Camera (ethernet REST API)
             camReachable           = poll.camReachable        ?? false
@@ -626,6 +634,28 @@ final class DataViewModel: ObservableObject {
     // Pi Camera Module 3 record — visual-only toggle, no Pi endpoint yet
     func togglePiCamRecord() {
         isPiCamRecording.toggle()
+    }
+
+    func captureHdmiStill() async {
+        guard !isCapturingStill else { return }
+        isCapturingStill = true
+        defer { isCapturingStill = false }
+        let piBase = AppSettings.shared.piServerURL
+        guard !piBase.isEmpty, let triggerURL = URL(string: piBase + "/hdmi/still") else { return }
+        var req = URLRequest(url: triggerURL)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 5
+        _ = try? await URLSession.shared.data(for: req)
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        if let url = URL(string: piBase + "/hdmi/stills/latest"),
+           let (data, resp) = try? await URLSession.shared.data(from: url),
+           let http = resp as? HTTPURLResponse,
+           http.statusCode == 200,
+           !data.isEmpty {
+            lastStillData       = data
+            lastStillCapturedAt = Date()
+            stills.insert(CapturedStill(piCamImageData: data, triggerType: "hdmi"), at: 0)
+        }
     }
 
     // BMPCC still via ESP32 bridge

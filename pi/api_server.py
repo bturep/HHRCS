@@ -19,7 +19,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 
-from config import config, CAMERA_BASE_URL
+from config import config, CAMERA_BASE_URL, HDMI_DEVICE
 from state_machine import StateMachine, TriggerType
 from sensors import (
     to_dict as sensors_dict,
@@ -45,6 +45,11 @@ import deployment
 import notifier
 import notifications
 import storage_monitor
+try:
+    from hdmi_stream import HDMIStreamer as _HDMIStreamer
+except ImportError:
+    _HDMIStreamer = None
+    log.warning("hdmi_stream unavailable (cv2 not installed) — HDMI endpoints disabled")
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 
@@ -64,12 +69,23 @@ CORS(app)
 # ── Shared camera HTTP client (singleton for /camera/* endpoints) ──────────────
 _cam_client = BMPCCCameraClient()
 
+# ── HDMI capture card streamer ─────────────────────────────────────────────────
+if _HDMIStreamer is not None:
+    _hdmi = _HDMIStreamer()
+    try:
+        _hdmi.start()
+    except Exception as _e:
+        log.warning(f"HDMI streamer failed to start: {_e}")
+else:
+    _hdmi = None
+
 # Clip name to use for the next record start (set via PUT /camera/clip_name)
 _next_clip_name: str = ""
 
 # ── State machine + hardware wiring ───────────────────────────────────────────
 
 sm = StateMachine()
+sm.manual_override = False          # explicit: fresh start is never blocked
 _uptime_start = time.time()
 _current_clip_id: str = ""
 _camera_started: bool = False
@@ -279,7 +295,7 @@ def status():
         "nd_filter": cam["nd_filter"],
         "iso": cam["iso"],
 
-        "recording": cam["recording"],
+        "recording": sm.is_recording() or cam_state["cam_recording"],
         "recording_state": sm_data["state"],
         "elapsed_seconds": sm_data["elapsed_seconds"],
         "elapsed_formatted": sm_data["elapsed_formatted"],
@@ -329,6 +345,8 @@ def status():
         "ssd_free_pct":    _ssd_free_pct(),
 
         "storage": storage_monitor.get_storage_stats(),
+
+        "hdmi_reachable": _hdmi.is_open() if _hdmi else False,
 
         # Deployment scope
         **_deployment_status_fields(),
@@ -563,11 +581,9 @@ def camera_status():
 @app.route("/camera/record/start", methods=["PUT", "POST"])
 def camera_record_start():
     global _next_clip_name
-    sm.manual_override = False
-    clip = _next_clip_name
     _next_clip_name = ""
-    ok = _cam_client.record_start(clip_name=clip)
-    return jsonify({"ok": ok})
+    sm.force_start()        # clears manual_override, transitions state machine, fires _on_record_start → camera.record_start()
+    return jsonify({"ok": True})
 
 @app.route("/camera/record/stop", methods=["PUT", "POST"])
 def camera_record_stop():
@@ -626,6 +642,45 @@ def stream():
         _mjpeg_frames(),
         mimetype="multipart/x-mixed-replace; boundary=frame",
     )
+
+# ── HDMI capture endpoints ─────────────────────────────────────────────────────
+
+_HDMI_STILLS_DIR = os.path.join(os.path.dirname(__file__), "stills", "hdmi")
+
+@app.route("/hdmi-stream")
+def hdmi_stream():
+    """MJPEG stream from the HDMI capture card."""
+    if _hdmi is None:
+        return jsonify({"error": "HDMI capture not available"}), 503
+    return Response(
+        _hdmi.generate_mjpeg(),
+        mimetype="multipart/x-mixed-replace; boundary=frame",
+    )
+
+@app.route("/hdmi/still", methods=["POST"])
+def hdmi_still():
+    if _hdmi is None:
+        return jsonify({"ok": False, "error": "HDMI capture not available"}), 503
+    os.makedirs(_HDMI_STILLS_DIR, exist_ok=True)
+    jpeg = _hdmi.capture_jpeg()
+    if jpeg:
+        path = os.path.join(_HDMI_STILLS_DIR, "latest.jpg")
+        with open(path, "wb") as f:
+            f.write(jpeg)
+        ts = datetime.now().strftime("%H:%M:%S")
+        log_agent_entry("observation", f"HDMI still captured at {ts}.")
+        notifications.emit("still.captured", "HHRCS — Still", "HDMI still saved")
+        return jsonify({"ok": True, "timestamp": ts, "bytes": len(jpeg)})
+    return jsonify({"ok": False, "error": "no HDMI frame available"}), 503
+
+@app.route("/hdmi/stills/latest", methods=["GET"])
+def hdmi_stills_latest():
+    path = os.path.join(_HDMI_STILLS_DIR, "latest.jpg")
+    if not os.path.exists(path):
+        return jsonify({"error": "no HDMI still available"}), 404
+    with open(path, "rb") as f:
+        data = f.read()
+    return Response(data, mimetype="image/jpeg")
 
 # ── Event bus endpoints ────────────────────────────────────────────────────────
 
