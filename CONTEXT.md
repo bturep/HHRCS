@@ -57,7 +57,7 @@ ExportOptions.plist     For future ad-hoc signed builds (requires paid Apple acc
 | Tab order | FIELD · FEED · DATA · SETTINGS |
 | Active URL default | `http://raspberrypi.local:5001` (first launch) |
 | Tab accent color | `Theme.accentOrange` (#FF8C00) |
-| MJPEG | Stops when FEED tab not visible; stops when app backgrounds |
+| FEED images | 5s still polling (StillPoller); no MJPEG streaming. One poller runs at a time. |
 | Fake data | Disabled — stills and session log start empty |
 | Signing | Unsigned IPA → Sideloadly (free Apple ID, 7-day expiry) |
 | Diagnostic dots | PI · CAM · YOLO · CARD · SSD |
@@ -179,6 +179,9 @@ Three targeted fixes: (1) HDMI import wrapped in `try/except ImportError` so ser
 
 **2026-05-06 — MJPEG frame integrity attempt + BMPCC HUD toggle (partially reverted)**
 First attempt: `_is_complete_jpeg()` SOI/EOI check + `CAP_PROP_FORMAT=-1` raw V4L2 bytes in `hdmi_stream.py`. Caused tiling — V4L2 splits MJPEG data across reads so fragments pass the header/footer check. Reverted to `cap.read()` → `cv2.imencode()` decode/re-encode pipeline (always produces complete JPEGs). Same check removed from `_mjpeg_frames()` in `api_server.py` (detector uses PIL encode — already valid). BMPCC HUD toggle added and then removed: `POST /camera/monitor/overlay`, `toggle_overlay()` in `camera_control.py`, `toggleBmpccOverlay()` in `DataViewModel.swift`, HUD button in `CameraTabView.swift` — all removed. BMPCC firmware 8.6 returns 404 on `/video/outputOverlay`; overlay API not implemented.
+
+**2026-05-06 — FEED architecture rewrite: MJPEG → 5s still polling**
+`MJPEGPlayer.swift` and `MJPEGStreamView.swift` deleted. New `StillPoller.swift`: `ObservableObject`, `POST triggerURL` then `GET fetchURL` every 5s, publishes `latestImage: PlatformImage?` and `lastUpdated: Date?`. `CameraTabView` rewritten: two `StillPoller` instances (`hdmiPoller` for BMPCC, `camPoller` for CAM + DETECT), only one runs at a time. `StillImagePage` shows still + elapsed-seconds label (dims >15s) + refresh button. `DetectionOverlayView` updated to take `StillPoller`. Pi endpoints: BMPCC → `POST /hdmi/still` + `GET /hdmi/stills/latest`; CAM/DETECT → `POST /still/trigger` + `GET /stills/latest`. `GET /stream` and `GET /hdmi-stream` still served but not consumed by iOS.
 
 **2026-05-06 — iOS MJPEG player boundary-aware buffering (tiling fix)**
 `MJPEGPlayer.extractFrames()` rewritten to use `--frame\r\n` multipart boundary detection instead of SOI/EOI byte scanning. Prior approach could find a false `0xFF 0xD9` (EOI) inside the JPEG bitstream, extracting a truncated frame that iOS renders with grey tiling below the valid content. New approach: find `--frame\r\n`, skip headers via `\r\n\r\n`, extract bytes up to the next `--frame\r\n` (stripping the trailing `\r\n` the Pi appends), then pass the complete JPEG to `PlatformImage(data:)`. Fixes both `/stream` and `/hdmi-stream`. No Pi changes.

@@ -2,11 +2,17 @@ import SwiftUI
 
 struct DetectionOverlayView: View {
     @EnvironmentObject var vm: DataViewModel
-    let player: MJPEGPlayer
+    let poller: StillPoller
 
     var body: some View {
         ZStack {
-            MJPEGStreamView(player: player)
+            Theme.background
+
+            if let image = poller.latestImage {
+                Image(platformImage: image)
+                    .resizable()
+                    .scaledToFit()
+            }
 
             if !vm.detections.isEmpty {
                 GeometryReader { geo in
@@ -36,15 +42,12 @@ struct DetectionOverlayView: View {
         }
     }
 
-    // Returns the CGRect the image occupies inside the container when displayed with scaledToFit.
     private func scaledToFitRect(in container: CGSize, aspect imageAspect: CGFloat) -> CGRect {
         let containerAspect = container.width / container.height
         if containerAspect > imageAspect {
-            // Container is wider than image → letterbox on left/right
             let w = container.height * imageAspect
             return CGRect(x: (container.width - w) / 2, y: 0, width: w, height: container.height)
         } else {
-            // Container is taller than image → letterbox on top/bottom
             let h = container.width / imageAspect
             return CGRect(x: 0, y: (container.height - h) / 2, width: container.width, height: h)
         }

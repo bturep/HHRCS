@@ -21,41 +21,33 @@ struct CameraTabView: View {
     @EnvironmentObject var orientationObserver: DeviceOrientationObserver
     @ObservedObject private var settings = AppSettings.shared
 
-    @State private var currentPage       = CameraPage.still
-    @State private var showISOPopover    = false
-    @State private var showWBPopover     = false
+    @State private var currentPage        = CameraPage.still
+    @State private var showISOPopover     = false
+    @State private var showWBPopover      = false
     @State private var showShutterPopover = false
-    @State private var showYoloPopover   = false
+    @State private var showYoloPopover    = false
 
-    @StateObject private var mjpegPlayer = MJPEGPlayer(
-        url: URL(string: "http://raspberrypi.local:5001/stream")!
+    // HDMI still: POST /hdmi/still → GET /hdmi/stills/latest
+    @StateObject private var hdmiPoller = StillPoller(
+        triggerURL: URL(string: "http://raspberrypi.local:5001/hdmi/still")!,
+        fetchURL:   URL(string: "http://raspberrypi.local:5001/hdmi/stills/latest")!
     )
-    @StateObject private var hdmiPlayer = MJPEGPlayer(
-        url: URL(string: "http://raspberrypi.local:5001/hdmi-stream")!
+    // Pi cam still: POST /still/trigger → GET /stills/latest
+    @StateObject private var camPoller = StillPoller(
+        triggerURL: URL(string: "http://raspberrypi.local:5001/still/trigger")!,
+        fetchURL:   URL(string: "http://raspberrypi.local:5001/stills/latest")!
     )
 
     private var isLandscape: Bool { orientationObserver.orientation.isLandscape }
 
-    private var streamURL: URL {
+    private func makeURL(_ path: String) -> URL {
         if !settings.piServerURL.isEmpty,
            var c = URLComponents(string: settings.piServerURL),
            c.host != nil {
-            c.path  = "/stream"
-            c.query = nil
+            c.path = path; c.query = nil
             if let url = c.url { return url }
         }
-        return URL(string: "http://raspberrypi.local:5001/stream")!
-    }
-
-    private var hdmiStreamURL: URL {
-        if !settings.piServerURL.isEmpty,
-           var c = URLComponents(string: settings.piServerURL),
-           c.host != nil {
-            c.path  = "/hdmi-stream"
-            c.query = nil
-            if let url = c.url { return url }
-        }
-        return URL(string: "http://raspberrypi.local:5001/hdmi-stream")!
+        return URL(string: "http://raspberrypi.local:5001\(path)")!
     }
 
     var body: some View {
@@ -63,44 +55,17 @@ struct CameraTabView: View {
             Theme.background.ignoresSafeArea()
 
             TabView(selection: $currentPage) {
-                MJPEGStreamView(player: hdmiPlayer)
-                    .onAppear {
-                        print("[MJPEG] BMPCC page appeared url=\(hdmiStreamURL)")
-                        hdmiPlayer.streamURL = hdmiStreamURL
-                        hdmiPlayer.start()
-                    }
-                    .onDisappear {
-                        print("[MJPEG] BMPCC page disappeared — stopping HDMI")
-                        hdmiPlayer.stop()
-                    }
+                StillImagePage(poller: hdmiPoller)
                     .padding(.top, 32)
                     .padding(.bottom, 54)
                     .tag(CameraPage.still)
 
-                MJPEGStreamView(player: mjpegPlayer)
-                    .onAppear {
-                        print("[MJPEG] CAM page appeared url=\(streamURL)")
-                        mjpegPlayer.streamURL = streamURL
-                        mjpegPlayer.start()
-                    }
-                    .onDisappear {
-                        print("[MJPEG] CAM page disappeared — stopping")
-                        mjpegPlayer.stop()
-                    }
+                StillImagePage(poller: camPoller)
                     .padding(.top, 32)
                     .padding(.bottom, 54)
                     .tag(CameraPage.live)
 
-                DetectionOverlayView(player: mjpegPlayer)
-                    .onAppear {
-                        print("[MJPEG] DETECT page appeared url=\(streamURL)")
-                        mjpegPlayer.streamURL = streamURL
-                        mjpegPlayer.start()
-                    }
-                    .onDisappear {
-                        print("[MJPEG] DETECT page disappeared — stopping")
-                        mjpegPlayer.stop()
-                    }
+                DetectionOverlayView(poller: camPoller)
                     .padding(.top, 32)
                     .padding(.bottom, 54)
                     .tag(CameraPage.detection)
@@ -139,41 +104,50 @@ struct CameraTabView: View {
             }
         }
         .background(Theme.background)
-        .onChange(of: streamURL) { _, url in
-            mjpegPlayer.streamURL = url
-            if currentPage == .live {
-                mjpegPlayer.stop()
-                mjpegPlayer.start()
-            }
-        }
-        .onChange(of: hdmiStreamURL) { _, url in
-            hdmiPlayer.streamURL = url
-            if currentPage == .still {
-                hdmiPlayer.stop()
-                hdmiPlayer.start()
-            }
-        }
+        .onAppear { startActivePoller() }
+        .onDisappear { camPoller.stop(); hdmiPoller.stop() }
+        .onChange(of: currentPage) { _, _ in rebalancePollers() }
         .onChange(of: isActive) { _, active in
-            if active {
-                if currentPage == .still {
-                    hdmiPlayer.streamURL = hdmiStreamURL
-                    hdmiPlayer.start()
-                } else if currentPage == .live || currentPage == .detection {
-                    mjpegPlayer.streamURL = streamURL
-                    mjpegPlayer.start()
-                }
-            } else {
-                mjpegPlayer.stop()
-                hdmiPlayer.stop()
-            }
+            if active { startActivePoller() } else { camPoller.stop(); hdmiPoller.stop() }
         }
+        .onChange(of: settings.piServerURL) { _, _ in updatePollerURLs() }
+    }
+
+    // MARK: – Poller lifecycle
+
+    private func startActivePoller() {
+        updatePollerURLs()
+        if currentPage == .still {
+            camPoller.stop()
+            hdmiPoller.start()
+        } else {
+            hdmiPoller.stop()
+            camPoller.start()
+        }
+    }
+
+    private func rebalancePollers() {
+        switch currentPage {
+        case .still:
+            camPoller.stop()
+            hdmiPoller.start()
+        case .live, .detection:
+            hdmiPoller.stop()
+            camPoller.start()
+        }
+    }
+
+    private func updatePollerURLs() {
+        hdmiPoller.triggerURL = makeURL("/hdmi/still")
+        hdmiPoller.fetchURL   = makeURL("/hdmi/stills/latest")
+        camPoller.triggerURL  = makeURL("/still/trigger")
+        camPoller.fetchURL    = makeURL("/stills/latest")
     }
 
     // MARK: – Data bar (BMPCC page only)
 
     private var stillDataBar: some View {
         HStack(spacing: 0) {
-            // AUTO badge — visible only when YOLO has triggered a recording
             if vm.yoloLocked && vm.isRecording {
                 Text("AUTO")
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
@@ -182,7 +156,6 @@ struct CameraTabView: View {
                     .padding(.trailing, 10)
             }
 
-            // ISO
             Group {
                 if settings.ownerModeEnabled {
                     Button { showISOPopover = true } label: {
@@ -207,7 +180,6 @@ struct CameraTabView: View {
 
             Spacer()
 
-            // WB
             Group {
                 if settings.ownerModeEnabled {
                     Button { showWBPopover = true } label: {
@@ -232,7 +204,6 @@ struct CameraTabView: View {
 
             Spacer()
 
-            // Shutter
             Group {
                 if settings.ownerModeEnabled {
                     Button { showShutterPopover = true } label: {
@@ -254,7 +225,6 @@ struct CameraTabView: View {
                 }
             }
             .font(.system(size: 11, weight: .regular, design: .monospaced))
-
         }
         .padding(.horizontal, 12)
         .frame(height: 32)
@@ -335,7 +305,7 @@ struct CameraTabView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: – Detection bottom bar (just the page indicator)
+    // MARK: – Detection bottom bar
 
     private var detectionControlBar: some View {
         HStack {
@@ -382,7 +352,57 @@ struct CameraTabView: View {
     }
 }
 
-// MARK: – Shared operator control row (STILL + CAM)
+// MARK: – Still image page (used by BMPCC and CAM sub-pages)
+
+private struct StillImagePage: View {
+    @ObservedObject var poller: StillPoller
+
+    var body: some View {
+        ZStack {
+            Theme.background
+
+            if let image = poller.latestImage {
+                Image(platformImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                VStack(spacing: 10) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 32, weight: .thin))
+                        .foregroundStyle(Theme.tertiary)
+                    Text("POLLING")
+                        .font(Theme.dataLabel())
+                        .tracking(Theme.labelTracking)
+                        .foregroundStyle(Theme.tertiary)
+                }
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 10) {
+                if let updated = poller.lastUpdated {
+                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                        let elapsed = Int(max(0, ctx.date.timeIntervalSince(updated)))
+                        Text("\(elapsed)s")
+                            .font(.system(size: 9, weight: .regular, design: .monospaced))
+                            .foregroundStyle(elapsed > 15
+                                ? Theme.tertiary.opacity(0.35)
+                                : Theme.tertiary)
+                    }
+                }
+                Button { poller.refreshNow() } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.trailing, 12)
+            .padding(.top, 6)
+        }
+    }
+}
+
+// MARK: – Shared operator control row (BMPCC + CAM)
 
 private struct OperatorControlRow<Indicator: View>: View {
     let isOwner: Bool
@@ -396,7 +416,6 @@ private struct OperatorControlRow<Indicator: View>: View {
 
     var body: some View {
         ZStack {
-            // 4-column grid matching the tab bar's equal layout
             HStack(spacing: 0) {
                 Group {
                     if isOwner {
