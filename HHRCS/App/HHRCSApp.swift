@@ -40,6 +40,7 @@ struct HHRCSApp: App {
                 .environmentObject(dataVM)
                 .environmentObject(orientationObserver)
                 .preferredColorScheme(.dark)
+                .statusBarHidden(true)
         }
         #if os(macOS)
         .windowStyle(.hiddenTitleBar)

@@ -2,6 +2,16 @@ import Foundation
 import Combine
 import SwiftUI
 
+struct StorageSnapshot: Decodable, Identifiable {
+    var id: String { date }
+    let date:      String
+    let usedBytes: Int
+    enum CodingKeys: String, CodingKey {
+        case date
+        case usedBytes = "used_bytes"
+    }
+}
+
 struct Detection: Identifiable {
     let id         = UUID()
     let label:      String
@@ -51,6 +61,14 @@ final class DataViewModel: ObservableObject {
     @Published var driveUsedPercent: Double = 47.3
     let driveTotalTB: Double = 6.0
     var driveUsedTB: Double { driveTotalTB * driveUsedPercent / 100.0 }
+
+    // MARK: – SSD (from Pi storage_monitor)
+    @Published var storageFreeGb:           Double? = nil
+    @Published var storageTotalGb:          Double? = nil
+    @Published var storageUsedPct:          Double? = nil
+    @Published var storageDaysRemaining:    Double? = nil
+    @Published var storageBurnRateGbPerDay: Double? = nil
+    @Published var storageSnapshots:        [StorageSnapshot] = []
 
     // MARK: – Still capture
     @Published var lastStillData:        Data? = nil
@@ -234,6 +252,23 @@ final class DataViewModel: ObservableObject {
             let box:        [Double]   // [x, y, w, h] normalized 0–1
         }
 
+        struct StorageInfo: Decodable {
+            let freeGb:           Double?
+            let totalGb:          Double?
+            let usedPct:          Double?
+            let daysRemaining:    Double?
+            let burnRateGbPerDay: Double?
+            let snapshots:        [StorageSnapshot]?
+            enum CodingKeys: String, CodingKey {
+                case freeGb           = "free_gb"
+                case totalGb          = "total_gb"
+                case usedPct          = "used_pct"
+                case daysRemaining    = "days_remaining"
+                case burnRateGbPerDay = "burn_rate_gb_per_day"
+                case snapshots
+            }
+        }
+
         let yoloRunning:                 Bool?
         let yoloSimMode:                 Bool?
         let ssdMounted:                  Bool?
@@ -242,6 +277,7 @@ final class DataViewModel: ObservableObject {
         let recording:                   Bool?
         let machineState:                String?
         let detections:                  [DetectionItem]?
+        let storage:                     StorageInfo?
 
         let camReachable:            Bool?
         let camRecording:            Bool?
@@ -263,6 +299,7 @@ final class DataViewModel: ObservableObject {
             case recording
             case machineState                = "machine_state"
             case detections
+            case storage
             case camReachable                = "cam_reachable"
             case camRecording                = "cam_recording"
             case camCodec                    = "cam_codec"
@@ -323,6 +360,16 @@ final class DataViewModel: ObservableObject {
             camGain                = poll.camGain
             camActiveMediaSlot     = poll.camActiveMediaSlot  ?? "—"
             camRemainingRecordTime = poll.camRemainingRecordTime
+
+            // SSD storage_monitor
+            if let s = poll.storage {
+                storageFreeGb           = s.freeGb
+                storageTotalGb          = s.totalGb
+                storageUsedPct          = s.usedPct
+                storageDaysRemaining    = s.daysRemaining
+                storageBurnRateGbPerDay = s.burnRateGbPerDay
+                storageSnapshots        = s.snapshots ?? []
+            }
 
             // isRecording is driven purely by the camera's authoritative state
             isRecording = camRecording

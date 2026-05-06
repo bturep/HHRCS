@@ -44,6 +44,7 @@ import agent
 import deployment
 import notifier
 import notifications
+import storage_monitor
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 
@@ -153,7 +154,11 @@ notifier.start()
 
 def _start_passive_agent():
     try:
-        agent.run_passive_summary()
+        summary = agent.build_summary()
+        summary["storage"] = storage_monitor.get_storage_stats()
+        summary["yolo_running"] = bool(detector._thread and detector._thread.is_alive())
+        notifier.evaluate_and_notify(summary)
+        agent.run_passive_summary(summary)
     except Exception as e:
         log.warning(f"Passive agent error: {e}")
     threading.Timer(300, _start_passive_agent).start()
@@ -322,6 +327,8 @@ def status():
         "machine_state":   sm_data["state"],
         "ssd_mounted":     os.path.ismount(config.ssd_mount),
         "ssd_free_pct":    _ssd_free_pct(),
+
+        "storage": storage_monitor.get_storage_stats(),
 
         # Deployment scope
         **_deployment_status_fields(),

@@ -162,11 +162,42 @@ struct DataTabView: View {
     // MARK: – Storage
     private var storageSection: some View {
         SectionCard(title: "STORAGE") {
-            BarCell(
-                label: "HOUSE DRIVE",
-                percent: vm.driveUsedPercent,
-                subtitle: String(format: "%.1f TB of %.1f TB", vm.driveUsedTB, vm.driveTotalTB)
-            )
+            VStack(spacing: 12) {
+                BarCell(
+                    label:    "HOUSE DRIVE",
+                    percent:  vm.driveUsedPercent,
+                    subtitle: String(format: "%.1f TB of %.1f TB", vm.driveUsedTB, vm.driveTotalTB)
+                )
+
+                if let usedPct = vm.storageUsedPct,
+                   let freeGb  = vm.storageFreeGb,
+                   let totalGb = vm.storageTotalGb {
+                    HRule()
+                    BarCell(
+                        label:    "SSD",
+                        percent:  usedPct,
+                        subtitle: String(format: "%.1f GB free  ·  %.0f GB total", freeGb, totalGb)
+                    )
+                    if let days = vm.storageDaysRemaining,
+                       let rate = vm.storageBurnRateGbPerDay {
+                        HStack(alignment: .top, spacing: 0) {
+                            MetricCell(
+                                value: String(format: "%.0f days", days),
+                                label: "EST. REMAINING"
+                            )
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                            MetricCell(
+                                value: String(format: "%.1f GB/day", rate),
+                                label: "BURN RATE"
+                            )
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                            Spacer()
+                                .frame(maxWidth: .infinity)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+            }
         }
     }
 

@@ -377,16 +377,18 @@ def query_agent(question: str) -> dict:
 
 # ── Passive summarizer (Tier 1 only) ──────────────────────────────────────────
 
-def run_passive_summary():
-    """Called every 5 min by the passive scheduler in api_server.py."""
+def run_passive_summary(summary: dict = None) -> dict:
+    """Called every 5 min by the passive scheduler in api_server.py.
+    Accepts a pre-built summary to avoid a redundant build_summary() call."""
     entry_id  = datetime.now().strftime("agent_%Y%m%d_%H%M%S")
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    try:
-        summary = build_summary()
-    except Exception as e:
-        log.error(f"run_passive_summary: build_summary failed: {e}")
-        return
+    if summary is None:
+        try:
+            summary = build_summary()
+        except Exception as e:
+            log.error(f"run_passive_summary: build_summary failed: {e}")
+            return
 
     dep_id        = None
     dep_name      = None
