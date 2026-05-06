@@ -12,8 +12,8 @@ private struct TabDef {
 }
 
 private let appTabs: [TabDef] = [
-    .init(label: "FIELD",    icon: "doc.text",      tag: 0),
-    .init(label: "FEED",     icon: "camera",        tag: 1),
+    .init(label: "FEED",     icon: "camera",        tag: 0),
+    .init(label: "FIELD",    icon: "doc.text",      tag: 1),
     .init(label: "DATA",     icon: "gauge.medium",  tag: 2),
     .init(label: "SETTINGS", icon: "gearshape",     tag: 3),
 ]
@@ -21,7 +21,7 @@ private let appTabs: [TabDef] = [
 // MARK: – Root view
 
 struct ContentView: View {
-    @State private var selectedTab  = 1
+    @State private var selectedTab  = 0
     @State private var isLaunched   = false
     @State private var tabBarHidden = false
     @EnvironmentObject var orientationObserver: DeviceOrientationObserver
@@ -69,12 +69,12 @@ struct ContentView: View {
 
     private var tabContent: some View {
         ZStack {
-            NotesTabView()
+            CameraTabView(isActive: selectedTab == 0)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .opacity(selectedTab == 0 ? 1 : 0)
                 .allowsHitTesting(selectedTab == 0)
 
-            CameraTabView(isActive: selectedTab == 1)
+            NotesTabView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .opacity(selectedTab == 1 ? 1 : 0)
                 .allowsHitTesting(selectedTab == 1)
@@ -156,7 +156,7 @@ private struct AppTabBar: View {
     }
 
     private func tabForeground(_ tab: TabDef) -> Color {
-        if tab.tag == 1 && (dataVM.isRecording || dataVM.isPiCamRecording) {
+        if tab.tag == 0 && (dataVM.isRecording || dataVM.isPiCamRecording) {
             return Theme.recordingRed
         }
         return selectedTab == tab.tag ? Theme.accentColor : Color(white: 0.38)

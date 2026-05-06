@@ -39,13 +39,17 @@ final class HistogramPoller: ObservableObject {
     private func poll() {
         var req = URLRequest(url: fetchURL)
         req.timeoutInterval = 8
-        URLSession.shared.dataTask(with: req) { data, _, _ in
+        URLSession.shared.dataTask(with: req) { data, _, err in
             guard let data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let json    = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let rawBins = json["bins"] as? [Int],
-                  let low     = json["clipped_low_pct"]  as? Double,
-                  let high    = json["clipped_high_pct"] as? Double
-            else { return }
+                  let low     = (json["clipped_low_pct"]  as? NSNumber)?.doubleValue,
+                  let high    = (json["clipped_high_pct"] as? NSNumber)?.doubleValue
+            else {
+                print("[HistogramPoller] parse failed — data=\(data?.count ?? -1) err=\(String(describing: err))")
+                return
+            }
+            print("[HistogramPoller] got \(rawBins.count) bins low=\(low) high=\(high)")
             DispatchQueue.main.async {
                 self.bins        = rawBins
                 self.clippedLow  = low
@@ -86,7 +90,7 @@ struct HistogramView: View {
             let barW   = size.width / count
 
             for (i, bin) in bins.enumerated() {
-                let h = Self.barMaxHeight * CGFloat(bin) / maxVal
+                let h = max(1, Self.barMaxHeight * CGFloat(bin) / maxVal)
                 let x = CGFloat(i) * barW
                 let rect = CGRect(x: x, y: size.height - h,
                                   width: max(1, barW - 0.5), height: h)

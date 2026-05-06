@@ -98,15 +98,19 @@ struct FullscreenImageView: View {
     @State private var lastOffset: CGSize  = .zero
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                Theme.background.ignoresSafeArea()
+        // ZStack does NOT have ignoresSafeArea — controls layer respects safe area automatically.
+        // Background and image each opt out individually, extending behind Dynamic Island.
+        ZStack {
+            Theme.background.ignoresSafeArea()
 
+            // Image in its own GeometryReader so geo.size covers the full screen for clamping.
+            GeometryReader { geo in
                 Image(platformImage: image)
                     .resizable()
                     .scaledToFit()
                     .scaleEffect(scale)
                     .offset(offset)
+                    .frame(width: geo.size.width, height: geo.size.height)
                     .gesture(
                         MagnificationGesture()
                             .onChanged { v in
@@ -134,34 +138,35 @@ struct FullscreenImageView: View {
                             }
                             .onEnded { _ in lastOffset = offset }
                     )
+            }
+            .ignoresSafeArea()
 
-                VStack {
-                    HStack {
-                        Spacer()
-                        Button { isPresented = false } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundStyle(.white)
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.top, geo.safeAreaInsets.top + 16)
-                        .padding(.trailing, 8)
-                    }
+            // Controls float over the image. ZStack respects safe area so this VStack
+            // starts below the Dynamic Island — no manual inset calculation needed.
+            VStack {
+                HStack {
                     Spacer()
-                    if !bins.isEmpty {
-                        HistogramView(bins: bins, clippedLow: clippedLow, clippedHigh: clippedHigh)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity)
-                            .background(Theme.cardBackground.opacity(0.75))
+                    Button { isPresented = false } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 8)
+                }
+                .padding(.top, 8)
+                Spacer()
+                if !bins.isEmpty {
+                    HistogramView(bins: bins, clippedLow: clippedLow, clippedHigh: clippedHigh)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity)
+                        .background(Theme.cardBackground.opacity(0.75))
                 }
             }
-            .frame(width: geo.size.width, height: geo.size.height)
         }
-        .ignoresSafeArea()
     }
 
     private func clampBounds(in geo: GeometryProxy) -> (CGFloat, CGFloat) {

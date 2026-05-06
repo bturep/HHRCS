@@ -54,9 +54,9 @@ ExportOptions.plist     For future ad-hoc signed builds (requires paid Apple acc
 | Bundle ID | `com.brandonpoole.hhrcs` |
 | Version | 0.4.2 |
 | Target | iOS 17 / macOS 14 |
-| Tab order | FIELD · FEED · DATA · SETTINGS |
+| Tab order | FEED · FIELD · DATA · SETTINGS |
 | Active URL default | `http://raspberrypi.local:5001` (first launch) |
-| Default tab | FEED (tab 1) — `selectedTab = 1` in ContentView |
+| Default tab | FEED (tab 0) — `selectedTab = 0` in ContentView |
 | Tab accent color | `Theme.accentOrange` (#FF8C00) |
 | FEED images | 5s still polling (StillPoller); no MJPEG streaming. One poller runs at a time. |
 | Fake data | Disabled — stills and session log start empty |
@@ -197,6 +197,9 @@ First attempt: `_is_complete_jpeg()` SOI/EOI check + `CAP_PROP_FORMAT=-1` raw V4
 
 **2026-05-06 — iOS MJPEG player boundary-aware buffering (tiling fix)**
 `MJPEGPlayer.extractFrames()` rewritten to use `--frame\r\n` multipart boundary detection instead of SOI/EOI byte scanning. Prior approach could find a false `0xFF 0xD9` (EOI) inside the JPEG bitstream, extracting a truncated frame that iOS renders with grey tiling below the valid content. New approach: find `--frame\r\n`, skip headers via `\r\n\r\n`, extract bytes up to the next `--frame\r\n` (stripping the trailing `\r\n` the Pi appends), then pass the complete JPEG to `PlatformImage(data:)`. Fixes both `/stream` and `/hdmi-stream`. No Pi changes.
+
+**2026-05-06 — Three small fixes: histogram rendering, fullscreen X button, tab reorder**
+(1) Histogram not displaying: `HistogramPoller.poll()` now uses `(json["clipped_low_pct"] as? NSNumber)?.doubleValue` instead of `as? Double` — `JSONSerialization` returns `NSNumber`, and `as? Double` can fail for integer-valued floats like `0.0`. Added `print` debug statements to confirm poll responses. Min bar height set to `max(1, ...)` so baseline is always visible even at 0-count bins. (2) Fullscreen X button unreachable: Root cause was `GeometryReader { }.ignoresSafeArea()` which makes `geo.safeAreaInsets.top = 0`, so `.padding(.top, geo.safeAreaInsets.top + 16)` resolved to only 16pt — inside Dynamic Island. Fix: restructured `FullscreenImageView` — removed outer `GeometryReader.ignoresSafeArea()` wrapper; image now has its own inner `GeometryReader.ignoresSafeArea()` (full screen for clamping); controls `VStack` sits in the outer `ZStack` which does NOT opt out of safe area, so it starts naturally below Dynamic Island; close button only needs `.padding(.top, 8)`. Applies to both BMPCC fullscreen and FIELD/STILLS fullscreen (shared `FullscreenImageView`). (3) Tab reorder: FEED is now tab 0 (was 1), FIELD is tab 1 (was 0). Updated `appTabs` array, `selectedTab = 0`, `tabContent` view order, recording-red indicator check (`tab.tag == 0`), `LaunchView.onAdvance(0)` for both auto-advance and CONTINUE OFFLINE.
 
 **2026-05-06 — Histogram endpoint + iOS exposure monitoring**
 New Pi endpoint `GET /hdmi/histogram`: returns `{"bins":[64 ints], "clipped_low_pct":float, "clipped_high_pct":float, "ts":ISO8601}` from latest HDMI frame; throttled to 1Hz in `_read_loop`; 503 if HDMI offline. New iOS `HistogramView.swift`: `HistogramPoller` (ObservableObject, polls every 5s) + `HistogramView` (Canvas-based 64-bar rendering; bins 0/63 turn `recordingRed` when clipping >2%; clipping label shown when either value ≥0.5%). `CameraTabView` wires `histogramPoller` to BMPCC page only — starts/stops with `hdmiPoller`; `StillImagePage` gains `bins`/`clippedLow`/`clippedHigh` params, shows histogram strip below image (`.cardBackground` background). Tap-to-fullscreen added to `StillImagePage`: tapping the image opens `FullscreenImageView` with histogram overlay. `FullscreenImageView` updated: close button repositioned to `safeAreaInsets.top + 16` (Dynamic Island safe), 44×44 tap target with `contentShape(Rectangle())`; histogram pinned at bottom with `cardBackground.opacity(0.75)`. Landscape padding fix: `.padding(.bottom, isLandscape ? 0 : 54)` on all three FEED tab pages. **BMPCC operator setup (before deployment):** Menu → Monitor → HDMI → Status Text → Off; Display 3D LUT → Off (ensures histogram reads true log data).

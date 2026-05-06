@@ -73,7 +73,7 @@ struct LaunchView: View {
                     .padding(.horizontal, 32)
             }
 
-            Button { onAdvance(1) } label: {
+            Button { onAdvance(0) } label: {
                 Text("CONTINUE OFFLINE")
                     .font(.system(size: 10, weight: .regular, design: .monospaced))
                     .tracking(1.5)
@@ -140,7 +140,7 @@ struct LaunchView: View {
         // Connectivity is reflected in the DATA tab health dots once the app is open.
         try? await Task.sleep(nanoseconds: 2_500_000_000)
         stopEllipsis()
-        onAdvance(1)
+        onAdvance(0)
     }
 
     private func startEllipsis() {
