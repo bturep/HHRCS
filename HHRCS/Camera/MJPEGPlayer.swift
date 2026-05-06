@@ -41,8 +41,12 @@ final class MJPEGPlayer: NSObject, ObservableObject, URLSessionDataDelegate {
     // Using boundary detection instead of SOI/EOI prevents partial-frame renders:
     // JPEG bitstreams can contain 0xFF 0xD9 (false EOI) internally, causing
     // the SOI/EOI scan to extract a truncated frame that iOS renders with grey tiling.
-    private static let boundary  = Data("--frame\r\n".utf8)
-    private static let headerEnd = Data("\r\n\r\n".utf8)
+    //
+    // Per multipart spec the Pi sends:  --frame\r\n<headers>\r\n\r\n<jpeg>\r\n--frame\r\n...
+    // Opening scan: --frame\r\n   Closing scan: \r\n--frame  (the \r\n is part of the delimiter)
+    private static let boundary        = Data("--frame\r\n".utf8)
+    private static let closingBoundary = Data("\r\n--frame".utf8)
+    private static let headerEnd       = Data("\r\n\r\n".utf8)
 
     init(url: URL, fallbackURL: URL? = nil) {
         self.streamURL   = url
@@ -185,26 +189,24 @@ final class MJPEGPlayer: NSObject, ObservableObject, URLSessionDataDelegate {
             }
             let jpegStart = headEnd.upperBound
 
-            // Find the next boundary — it marks the end of this frame's JPEG data.
-            guard let b2 = buffer.range(of: MJPEGPlayer.boundary,
+            // Find the closing delimiter \r\n--frame — the \r\n is part of the multipart spec,
+            // not a Pi-specific addition. This is what actually terminates the JPEG payload.
+            guard let b2 = buffer.range(of: MJPEGPlayer.closingBoundary,
                                         in: jpegStart..<buffer.count) else {
                 if buffer.count > 50_000_000 { buffer.removeAll() }
                 return  // frame not yet complete
             }
 
-            // Pi appends \r\n after each JPEG before the next boundary; strip it.
-            var jpegEnd = b2.lowerBound
-            if jpegEnd >= 2 && buffer[jpegEnd - 2] == 0x0D && buffer[jpegEnd - 1] == 0x0A {
-                jpegEnd -= 2
-            }
-
+            // Bytes between header end and closing delimiter are the complete JPEG.
+            let jpegEnd = b2.lowerBound
             guard jpegEnd > jpegStart else {
                 buffer.removeSubrange(0..<b2.lowerBound)
                 continue
             }
 
             let jpegData = Data(buffer[jpegStart..<jpegEnd])
-            // Advance buffer to the start of the next boundary for the next iteration.
+            // Keep buffer from \r\n--frame onward; the leading \r\n is discarded on the
+            // next iteration when we trim bytes before the --frame\r\n opening marker.
             buffer.removeSubrange(0..<b2.lowerBound)
 
             guard let img = PlatformImage(data: jpegData) else { continue }
