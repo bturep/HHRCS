@@ -19,6 +19,7 @@
 		2A4BEE9FAB35687B6E944C87 /* AstroArcView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F47490E20794A7DF2F52B3B0 /* AstroArcView.swift */; };
 		2AAA6FCDF0DBD5553BFF545C /* NotesTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BBEC94715E7A3B1A897DAAE /* NotesTabView.swift */; };
 		2ADE84D4CD578B0E6B3C039A /* AstroArcView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F47490E20794A7DF2F52B3B0 /* AstroArcView.swift */; };
+		3083654DCF513A9CE387BAF3 /* HistogramView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D035DADD86A2CB0B60350BB /* HistogramView.swift */; };
 		30D93125551B190FF2A5648E /* HHRCSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2C897C2C7F9327E61C94FA1 /* HHRCSApp.swift */; };
 		335E4CE7F9AC11F273DDACAF /* StillFrameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBE148B5C3E6C9F9CBE4F5A /* StillFrameView.swift */; };
 		342647823806E877BA2C0515 /* CapturedStill.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5705655DABA81BA23F8897D /* CapturedStill.swift */; };
@@ -60,6 +61,7 @@
 		E4E9842E9C2B0E8BFB3500E6 /* StillFrameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBE148B5C3E6C9F9CBE4F5A /* StillFrameView.swift */; };
 		E5C748841D20F20B889800AE /* EventLogLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91BB91235F837DDBC92E5E05 /* EventLogLine.swift */; };
 		EB596481974C88D49B0589CB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 870811B415431ECEC3A21CF0 /* Assets.xcassets */; };
+		F127E9C3991E15B26F7969ED /* HistogramView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D035DADD86A2CB0B60350BB /* HistogramView.swift */; };
 		F6B8944977CCF073A0F6E8AC /* NotificationPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = B86E6BD49A75FE847376DF97 /* NotificationPoller.swift */; };
 		FC4C0600049342B10D6CE09B /* LaunchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 400AA1A4DF0587373EA841C6 /* LaunchView.swift */; };
 		FF42740CED83F3E35FAC11B1 /* InstrumentComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30229EF73E88E1F5D2955BD4 /* InstrumentComponents.swift */; };
@@ -81,6 +83,7 @@
 		64752CED0EF478039BD8B966 /* StillsGalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StillsGalleryView.swift; sourceTree = "<group>"; };
 		71F6A5ECD1FB347F6697DCDB /* HHRCS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HHRCS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		78F3FD2E5E54F594FFC20C38 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		7D035DADD86A2CB0B60350BB /* HistogramView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistogramView.swift; sourceTree = "<group>"; };
 		7ED887A859F3DBD42F7AC0D8 /* DetectionOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectionOverlayView.swift; sourceTree = "<group>"; };
 		870811B415431ECEC3A21CF0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8FBE148B5C3E6C9F9CBE4F5A /* StillFrameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StillFrameView.swift; sourceTree = "<group>"; };
@@ -158,6 +161,7 @@
 			children = (
 				4D9757745C2EEDD2758786E5 /* CameraTabView.swift */,
 				7ED887A859F3DBD42F7AC0D8 /* DetectionOverlayView.swift */,
+				7D035DADD86A2CB0B60350BB /* HistogramView.swift */,
 				8FBE148B5C3E6C9F9CBE4F5A /* StillFrameView.swift */,
 				CD84F13B98BBE221184B9CF4 /* StillPoller.swift */,
 				64752CED0EF478039BD8B966 /* StillsGalleryView.swift */,
@@ -336,6 +340,7 @@
 				47138C0D625E4C6687D2ADF0 /* DiagnosticRecovery.swift in Sources */,
 				381D94F06522EF1CD103313B /* EventLogLine.swift in Sources */,
 				30D93125551B190FF2A5648E /* HHRCSApp.swift in Sources */,
+				3083654DCF513A9CE387BAF3 /* HistogramView.swift in Sources */,
 				025CD9B6B06E602DC329D42C /* InstrumentComponents.swift in Sources */,
 				FC4C0600049342B10D6CE09B /* LaunchView.swift in Sources */,
 				1AC6CC8D137FA263E861084E /* NotesTabView.swift in Sources */,
@@ -370,6 +375,7 @@
 				4F6BAA9141F4313F908AE91C /* DiagnosticRecovery.swift in Sources */,
 				E5C748841D20F20B889800AE /* EventLogLine.swift in Sources */,
 				16C1EE04F5DE0BCC3B4ECC39 /* HHRCSApp.swift in Sources */,
+				F127E9C3991E15B26F7969ED /* HistogramView.swift in Sources */,
 				FF42740CED83F3E35FAC11B1 /* InstrumentComponents.swift in Sources */,
 				B69B7517E2FE552AAF4B5B58 /* LaunchView.swift in Sources */,
 				2AAA6FCDF0DBD5553BFF545C /* NotesTabView.swift in Sources */,

@@ -2,6 +2,8 @@ import cv2
 import threading
 import time
 import logging
+import numpy as np
+from datetime import datetime, timezone
 
 from config import HDMI_DEVICE, HDMI_WIDTH, HDMI_HEIGHT, HDMI_FPS
 
@@ -14,7 +16,9 @@ class HDMIStreamer:
         self._thread: threading.Thread | None = None
         self._running = False
         self._latest: bytes | None = None
+        self._latest_histogram: dict | None = None
         self._lock = threading.Lock()
+        self._last_hist_ts: float = 0.0  # monotonic; read_loop only
 
     def start(self):
         cap = cv2.VideoCapture(HDMI_DEVICE, cv2.CAP_V4L2)
@@ -74,6 +78,28 @@ class HDMIStreamer:
                 log.debug(f"HDMIStreamer.generate_mjpeg: {e}")
                 time.sleep(interval)
 
+    def compute_histogram(self, frame) -> dict | None:
+        """Convert BGR frame to 64-bin grayscale histogram. Never raises."""
+        try:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            bins, _ = np.histogram(gray, bins=64, range=(0, 256))
+            total = frame.shape[0] * frame.shape[1]
+            clipped_low  = float(bins[0])  / total
+            clipped_high = float(bins[-1]) / total
+            return {
+                "bins": bins.astype(int).tolist(),
+                "clipped_low_pct":  round(clipped_low,  4),
+                "clipped_high_pct": round(clipped_high, 4),
+                "ts": datetime.now(timezone.utc).isoformat(),
+            }
+        except Exception as e:
+            log.debug(f"HDMIStreamer.compute_histogram: {e}")
+            return None
+
+    def latest_histogram(self) -> dict | None:
+        with self._lock:
+            return self._latest_histogram
+
     def _read_loop(self):
         while self._running and self._cap and self._cap.isOpened():
             ok, frame = self._cap.read()
@@ -84,4 +110,14 @@ class HDMIStreamer:
             if ok2:
                 with self._lock:
                     self._latest = buf.tobytes()
+
+            # Throttle histogram to once per second to avoid burning CPU.
+            now = time.monotonic()
+            if now - self._last_hist_ts >= 1.0:
+                hist = self.compute_histogram(frame)
+                if hist is not None:
+                    with self._lock:
+                        self._latest_histogram = hist
+                self._last_hist_ts = now
+
         log.info("HDMIStreamer._read_loop: exiting")

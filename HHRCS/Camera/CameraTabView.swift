@@ -37,6 +37,10 @@ struct CameraTabView: View {
         triggerURL: URL(string: "http://raspberrypi.local:5001/still/trigger")!,
         fetchURL:   URL(string: "http://raspberrypi.local:5001/stills/latest")!
     )
+    // HDMI histogram: GET /hdmi/histogram every 5s (BMPCC page only)
+    @StateObject private var histogramPoller = HistogramPoller(
+        fetchURL: URL(string: "http://raspberrypi.local:5001/hdmi/histogram")!
+    )
 
     private var isLandscape: Bool { orientationObserver.orientation.isLandscape }
 
@@ -55,19 +59,24 @@ struct CameraTabView: View {
             Theme.background.ignoresSafeArea()
 
             TabView(selection: $currentPage) {
-                StillImagePage(poller: hdmiPoller)
-                    .padding(.top, 32)
-                    .padding(.bottom, 54)
-                    .tag(CameraPage.still)
+                StillImagePage(
+                    poller:      hdmiPoller,
+                    bins:        histogramPoller.bins,
+                    clippedLow:  histogramPoller.clippedLow,
+                    clippedHigh: histogramPoller.clippedHigh
+                )
+                .padding(.top, 32)
+                .padding(.bottom, isLandscape ? 0 : 54)
+                .tag(CameraPage.still)
 
                 StillImagePage(poller: camPoller)
                     .padding(.top, 32)
-                    .padding(.bottom, 54)
+                    .padding(.bottom, isLandscape ? 0 : 54)
                     .tag(CameraPage.live)
 
                 DetectionOverlayView(poller: camPoller)
                     .padding(.top, 32)
-                    .padding(.bottom, 54)
+                    .padding(.bottom, isLandscape ? 0 : 54)
                     .tag(CameraPage.detection)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -106,10 +115,11 @@ struct CameraTabView: View {
         }
         .background(Theme.background)
         .onAppear { startActivePoller() }
-        .onDisappear { camPoller.stop(); hdmiPoller.stop() }
+        .onDisappear { camPoller.stop(); hdmiPoller.stop(); histogramPoller.stop() }
         .onChange(of: currentPage) { _, _ in rebalancePollers() }
         .onChange(of: isActive) { _, active in
-            if active { startActivePoller() } else { camPoller.stop(); hdmiPoller.stop() }
+            if active { startActivePoller() }
+            else { camPoller.stop(); hdmiPoller.stop(); histogramPoller.stop() }
         }
         .onChange(of: settings.piServerURL) { _, _ in updatePollerURLs() }
     }
@@ -121,8 +131,10 @@ struct CameraTabView: View {
         if currentPage == .still {
             camPoller.stop()
             hdmiPoller.start()
+            histogramPoller.start()
         } else {
             hdmiPoller.stop()
+            histogramPoller.stop()
             camPoller.start()
         }
     }
@@ -132,17 +144,20 @@ struct CameraTabView: View {
         case .still:
             camPoller.stop()
             hdmiPoller.start()
+            histogramPoller.start()
         case .live, .detection:
             hdmiPoller.stop()
+            histogramPoller.stop()
             camPoller.start()
         }
     }
 
     private func updatePollerURLs() {
-        hdmiPoller.triggerURL = makeURL("/hdmi/still")
-        hdmiPoller.fetchURL   = makeURL("/hdmi/stills/latest")
-        camPoller.triggerURL  = makeURL("/still/trigger")
-        camPoller.fetchURL    = makeURL("/stills/latest")
+        hdmiPoller.triggerURL    = makeURL("/hdmi/still")
+        hdmiPoller.fetchURL      = makeURL("/hdmi/stills/latest")
+        camPoller.triggerURL     = makeURL("/still/trigger")
+        camPoller.fetchURL       = makeURL("/stills/latest")
+        histogramPoller.fetchURL = makeURL("/hdmi/histogram")
     }
 
     // MARK: – Data bar (BMPCC page only)
@@ -357,49 +372,90 @@ struct CameraTabView: View {
 
 private struct StillImagePage: View {
     @ObservedObject var poller: StillPoller
+    var bins:        [Int]   = []
+    var clippedLow:  Double  = 0
+    var clippedHigh: Double  = 0
+
+    @State private var showFullscreen = false
 
     var body: some View {
-        ZStack {
-            Theme.background
+        VStack(spacing: 0) {
+            ZStack {
+                Theme.background
 
-            if let image = poller.latestImage {
-                Image(platformImage: image)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                VStack(spacing: 10) {
-                    Image(systemName: "photo")
-                        .font(.system(size: 32, weight: .thin))
-                        .foregroundStyle(Theme.tertiary)
-                    Text("POLLING")
-                        .font(Theme.dataLabel())
-                        .tracking(Theme.labelTracking)
-                        .foregroundStyle(Theme.tertiary)
-                }
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            HStack(spacing: 10) {
-                if let updated = poller.lastUpdated {
-                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                        let elapsed = Int(max(0, ctx.date.timeIntervalSince(updated)))
-                        Text("\(elapsed)s")
-                            .font(.system(size: 9, weight: .regular, design: .monospaced))
-                            .foregroundStyle(elapsed > 15
-                                ? Theme.tertiary.opacity(0.35)
-                                : Theme.tertiary)
+                if let image = poller.latestImage {
+                    Image(platformImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .onTapGesture { showFullscreen = true }
+                } else {
+                    VStack(spacing: 10) {
+                        Image(systemName: "photo")
+                            .font(.system(size: 32, weight: .thin))
+                            .foregroundStyle(Theme.tertiary)
+                        Text("POLLING")
+                            .font(Theme.dataLabel())
+                            .tracking(Theme.labelTracking)
+                            .foregroundStyle(Theme.tertiary)
                     }
                 }
-                Button { poller.refreshNow() } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.tertiary)
-                }
-                .buttonStyle(.plain)
             }
-            .padding(.trailing, 12)
-            .padding(.top, 6)
+            .overlay(alignment: .topTrailing) {
+                HStack(spacing: 10) {
+                    if let updated = poller.lastUpdated {
+                        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                            let elapsed = Int(max(0, ctx.date.timeIntervalSince(updated)))
+                            Text("\(elapsed)s")
+                                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                                .foregroundStyle(elapsed > 15
+                                    ? Theme.tertiary.opacity(0.35)
+                                    : Theme.tertiary)
+                        }
+                    }
+                    Button { poller.refreshNow() } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.trailing, 12)
+                .padding(.top, 6)
+            }
+
+            if !bins.isEmpty {
+                HistogramView(bins: bins, clippedLow: clippedLow, clippedHigh: clippedHigh)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity)
+                    .background(Theme.cardBackground)
+            }
         }
+        #if os(iOS)
+        .fullScreenCover(isPresented: $showFullscreen) {
+            if let image = poller.latestImage {
+                FullscreenImageView(
+                    image:       image,
+                    isPresented: $showFullscreen,
+                    bins:        bins,
+                    clippedLow:  clippedLow,
+                    clippedHigh: clippedHigh
+                )
+            }
+        }
+        #else
+        .sheet(isPresented: $showFullscreen) {
+            if let image = poller.latestImage {
+                FullscreenImageView(
+                    image:       image,
+                    isPresented: $showFullscreen,
+                    bins:        bins,
+                    clippedLow:  clippedLow,
+                    clippedHigh: clippedHigh
+                )
+            }
+        }
+        #endif
     }
 }
 

@@ -682,6 +682,16 @@ def hdmi_stills_latest():
         data = f.read()
     return Response(data, mimetype="image/jpeg")
 
+@app.route("/hdmi/histogram", methods=["GET"])
+def hdmi_histogram():
+    """64-bin grayscale histogram of the latest HDMI frame, throttled to 1Hz on Pi."""
+    if _hdmi is None:
+        return jsonify({"error": "HDMI capture not available"}), 503
+    hist = _hdmi.latest_histogram()
+    if hist is None:
+        return jsonify({"error": "no histogram data yet"}), 503
+    return jsonify(hist)
+
 # ── Event bus endpoints ────────────────────────────────────────────────────────
 
 @app.route("/events", methods=["GET"])

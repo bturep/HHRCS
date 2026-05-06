@@ -98,6 +98,14 @@ Key endpoints (all base: `http://192.168.10.2/control/api/v1`):
 - `GET  /media/active`
 - `GET /video/outputOverlay`   `PUT /video/outputOverlay` — **returns 404 on firmware 8.6; overlay API not implemented**; HUD toggle removed from app
 
+Pi HDMI endpoints (base: `http://raspberrypi.local:5001`):
+- `GET  /hdmi/histogram` — 64-bin grayscale histogram of latest HDMI frame; returns `{"bins":[64 ints], "clipped_low_pct": float, "clipped_high_pct": float, "ts": ISO8601}`. 503 if HDMI offline. Throttled to 1Hz on Pi.
+
+**BMPCC operator setup (before deployment):**
+- Menu → Monitor → HDMI → Status Text → **Off** (removes firmware overlay from HDMI output)
+- Menu → Monitor → HDMI → Display 3D LUT → **Off** (ensures histogram reads true log data)
+- Menu → Monitor → HDMI → Zebra → **Off** (optional, avoids blown whites masking histogram)
+
 ---
 
 ## Ethernet Link Troubleshooting
@@ -189,6 +197,9 @@ First attempt: `_is_complete_jpeg()` SOI/EOI check + `CAP_PROP_FORMAT=-1` raw V4
 
 **2026-05-06 — iOS MJPEG player boundary-aware buffering (tiling fix)**
 `MJPEGPlayer.extractFrames()` rewritten to use `--frame\r\n` multipart boundary detection instead of SOI/EOI byte scanning. Prior approach could find a false `0xFF 0xD9` (EOI) inside the JPEG bitstream, extracting a truncated frame that iOS renders with grey tiling below the valid content. New approach: find `--frame\r\n`, skip headers via `\r\n\r\n`, extract bytes up to the next `--frame\r\n` (stripping the trailing `\r\n` the Pi appends), then pass the complete JPEG to `PlatformImage(data:)`. Fixes both `/stream` and `/hdmi-stream`. No Pi changes.
+
+**2026-05-06 — Histogram endpoint + iOS exposure monitoring**
+New Pi endpoint `GET /hdmi/histogram`: returns `{"bins":[64 ints], "clipped_low_pct":float, "clipped_high_pct":float, "ts":ISO8601}` from latest HDMI frame; throttled to 1Hz in `_read_loop`; 503 if HDMI offline. New iOS `HistogramView.swift`: `HistogramPoller` (ObservableObject, polls every 5s) + `HistogramView` (Canvas-based 64-bar rendering; bins 0/63 turn `recordingRed` when clipping >2%; clipping label shown when either value ≥0.5%). `CameraTabView` wires `histogramPoller` to BMPCC page only — starts/stops with `hdmiPoller`; `StillImagePage` gains `bins`/`clippedLow`/`clippedHigh` params, shows histogram strip below image (`.cardBackground` background). Tap-to-fullscreen added to `StillImagePage`: tapping the image opens `FullscreenImageView` with histogram overlay. `FullscreenImageView` updated: close button repositioned to `safeAreaInsets.top + 16` (Dynamic Island safe), 44×44 tap target with `contentShape(Rectangle())`; histogram pinned at bottom with `cardBackground.opacity(0.75)`. Landscape padding fix: `.padding(.bottom, isLandscape ? 0 : 54)` on all three FEED tab pages. **BMPCC operator setup (before deployment):** Menu → Monitor → HDMI → Status Text → Off; Display 3D LUT → Off (ensures histogram reads true log data).
 
 **2026-05-05 — ntfy.sh Layer 2 notifier + STORAGE card**
 New `notifier.py` on Pi: `send_alert()` via ntfy.sh JSON API (UTF-8 safe); `evaluate_and_notify(summary)` checks cam_unreachable / ssd_critical / ssd_high / yolo_down / cpu_temp_high with 6-hour in-memory dedup. Passive scheduler in `api_server.py` builds summary once, augments with storage + yolo_running, calls `evaluate_and_notify()` then `run_passive_summary(summary)` — single `build_summary()` call per tick. New `storage_monitor.py`: `df -B1` burn-rate tracker with daily snapshots; returns `days_remaining` after ≥2 days of data. `/status` now includes `storage` dict. iOS: `StorageSnapshot` + `StorageInfo` decodables; 6 new `@Published` vars in `DataViewModel`; `storageSection` var in `DataTabView` expanded inline (house drive bar + SSD bar + est. days remaining + burn rate). `run_passive_summary()` accepts optional pre-built `summary` dict to avoid redundant `build_summary()` call. Status bar hidden app-wide via `.statusBarHidden(true)` on root view in `HHRCSApp.swift`.

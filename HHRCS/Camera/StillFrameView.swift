@@ -86,8 +86,11 @@ struct StillFrameView: View {
 // MARK: – Fullscreen viewer with pinch-to-zoom + pan
 
 struct FullscreenImageView: View {
-    let image: PlatformImage
+    let image:       PlatformImage
     @Binding var isPresented: Bool
+    var bins:        [Int]   = []
+    var clippedLow:  Double  = 0
+    var clippedHigh: Double  = 0
 
     @State private var scale:      CGFloat = 1.0
     @State private var lastScale:  CGFloat = 1.0
@@ -139,11 +142,21 @@ struct FullscreenImageView: View {
                             Image(systemName: "xmark")
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundStyle(.white)
-                                .padding(20)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .padding(.top, geo.safeAreaInsets.top + 16)
+                        .padding(.trailing, 8)
                     }
                     Spacer()
+                    if !bins.isEmpty {
+                        HistogramView(bins: bins, clippedLow: clippedLow, clippedHigh: clippedHigh)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity)
+                            .background(Theme.cardBackground.opacity(0.75))
+                    }
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
