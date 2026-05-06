@@ -159,6 +159,6 @@ private struct AppTabBar: View {
         if tab.tag == 1 && (dataVM.isRecording || dataVM.isPiCamRecording) {
             return Theme.recordingRed
         }
-        return selectedTab == tab.tag ? Theme.accentOrange : Color(white: 0.38)
+        return selectedTab == tab.tag ? Theme.accentColor : Color(white: 0.38)
     }
 }

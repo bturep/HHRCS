@@ -14,8 +14,8 @@ struct LaunchView: View {
             Color.black.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: -6) {
-                letterRow(letter: "H", word: "UNTER")
-                letterRow(letter: "H", word: "OUSE")
+                letterRow(letter: "H", word: "UNTER", letterColor: Color(hex: "FF8C00"))
+                letterRow(letter: "H", word: "OUSE",  letterColor: Color(hex: "FF8C00"))
                 letterRow(letter: "R", word: "EMOTE")
                 letterRow(letter: "C", word: "AMERA")
                 letterRow(letter: "S", word: "YSTEM")
@@ -63,7 +63,7 @@ struct LaunchView: View {
             Text("NO SIGNAL")
                 .font(.system(size: 9, weight: .regular, design: .monospaced))
                 .tracking(2.0)
-                .foregroundStyle(Theme.accentOrange)
+                .foregroundStyle(Theme.accentColor)
 
             if !msg.isEmpty {
                 Text(msg)
@@ -77,7 +77,7 @@ struct LaunchView: View {
                 Text("CONTINUE OFFLINE")
                     .font(.system(size: 10, weight: .regular, design: .monospaced))
                     .tracking(1.5)
-                    .foregroundStyle(Theme.accentOrange)
+                    .foregroundStyle(Theme.accentColor)
             }
             .buttonStyle(.plain)
             .padding(.top, 4)
@@ -105,11 +105,11 @@ struct LaunchView: View {
     }
 
     @ViewBuilder
-    private func letterRow(letter: String, word: String) -> some View {
+    private func letterRow(letter: String, word: String, letterColor: Color = Theme.accentColor) -> some View {
         HStack(alignment: .lastTextBaseline, spacing: 4) {
             Text(letter)
                 .font(.system(size: 36, weight: .heavy, design: .default))
-                .foregroundStyle(Theme.accentOrange.opacity(0.82))
+                .foregroundStyle(letterColor.opacity(0.82))
             Text(word)
                 .font(.system(size: 10, weight: .regular, design: .monospaced))
                 .tracking(4.0)

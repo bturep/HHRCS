@@ -45,7 +45,7 @@ struct NotesTabView: View {
                                 .foregroundStyle(segment == s ? .white : Theme.tertiary)
                                 .fontWeight(segment == s ? .medium : .regular)
                             Rectangle()
-                                .fill(segment == s ? Theme.accentOrange : Color.clear)
+                                .fill(segment == s ? Theme.accentColor : Color.clear)
                                 .frame(height: 1)
                         }
                     }
@@ -152,7 +152,7 @@ struct NotesTabView: View {
                 TextField("Message", text: $agentQueryDraft, axis: .vertical)
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .foregroundStyle(.white)
-                    .tint(Theme.accentOrange)
+                    .tint(Theme.accentColor)
                     .lineLimit(1...4)
                     .submitLabel(.send)
                     .onSubmit { submitAgentQuery() }
@@ -160,7 +160,7 @@ struct NotesTabView: View {
                 Button(action: submitAgentQuery) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 20))
-                        .foregroundStyle(canSendQuery ? Theme.accentOrange : Theme.tertiary)
+                        .foregroundStyle(canSendQuery ? Theme.accentColor : Theme.tertiary)
                 }
                 .disabled(!canSendQuery)
                 .buttonStyle(.plain)

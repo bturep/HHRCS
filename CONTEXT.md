@@ -160,3 +160,9 @@ Replaced ESP32/BLE bridge with direct BMPCC REST API over USB-C ethernet adapter
 
 **2026-05-04 — Bug fixes (feature/ethernet)**
 Three targeted fixes: (1) Manual stop is now authoritative — `state_machine.py` gains `manual_override` flag and `force_idle()` method; `detection_event()` and `open_window()` no-op while flag is set; cleared on next manual start. `api_server.py` calls `sm.force_idle()` on `/camera/record/stop` and clears flag on `/camera/record/start`. YOLO confirmation popup removed from `CameraTabView` — stop button always acts immediately. (2) BMPCC stills button replaced with disabled "HDMI PREVIEW" placeholder (HDMI dongle ordered; Pi stills via `/still/trigger` still available on CAM page). (3) Raw media slot names from BMPCC REST API mapped before display: `sd0`→`SD`, `cf0`→`CFast`, `usb0`→`USB` in `camera_http.py`.
+
+**2026-05-05 — Agent bridge_reachable fix**
+`agent.py` crashed every ~60s: `'CameraControl' object has no attribute 'bridge_reachable'` (notifier cascaded too). Fixed: `_camera.bridge_reachable` → `_camera.connected`; `_camera.ble_state` removed (BLE gone). Summary dict key `bridge_reachable` → `cam_reachable`; `ble_state` key removed from summary dict, LLM context block, and both `context_snapshot` dicts.
+
+**2026-05-05 — Color system overhaul**
+All orange/terra-cotta accent colors replaced with `#349beb` blue. `Theme.accent` (#C4714A) and `Theme.accentOrange` (#FF8C00) both set to `Color(hex: "349beb")`. `accentOrange` renamed to `accentColor` across 57 references in 7 files. Launch screen exception: H·H rows hardcode original `#FF8C00` orange; R·C·S rows use `Theme.accentColor` (blue). `letterRow()` gains optional `letterColor` parameter.

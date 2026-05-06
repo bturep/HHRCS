@@ -5,13 +5,13 @@ enum Theme {
     static let background           = Color(red: 0.039, green: 0.039, blue: 0.039) // #0A0A0A
     static let cardBackground       = Color(red: 0.098, green: 0.098, blue: 0.090) // #191917
     static let cardBackgroundActive = Color(red: 0.165, green: 0.125, blue: 0.094) // #2A2018
-    static let accent             = Color(red: 0.769, green: 0.443, blue: 0.290) // #C4714A
-    static let accentOrange       = Color(red: 1.000, green: 0.549, blue: 0.000) // #FF8C00
+    static let accent             = Color(hex: "349beb") // #349beb
+    static let accentColor       = Color(hex: "349beb") // #349beb
     static let recordingRed       = Color(red: 0.800, green: 0.200, blue: 0.200) // #CC3333
 
-    // Status dot tokens — explicit vivid values for perceptual consistency with accentOrange
+    // Status dot tokens — explicit vivid values for perceptual consistency with accentColor
     static let dotGreen           = Color(hex: "00C853") // vivid green
-    static let dotAmber           = Color(hex: "FFB300") // vivid amber (distinct from accentOrange)
+    static let dotAmber           = Color(hex: "FFB300") // vivid amber (distinct from accentColor)
     static let dotRed             = Color(hex: "E53935") // vivid red
     static let cardLabel          = Color(white: 0.333) // #555550
     static let text               = Color.white

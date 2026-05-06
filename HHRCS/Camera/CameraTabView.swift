@@ -325,12 +325,12 @@ struct CameraTabView: View {
                         Text(page.label)
                             .font(.system(size: 8, weight: .semibold, design: .monospaced))
                             .tracking(1.8)
-                            .foregroundStyle(Theme.accentOrange)
+                            .foregroundStyle(Theme.accentColor)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 2)
-                                    .stroke(Theme.accentOrange, lineWidth: 0.5)
+                                    .stroke(Theme.accentColor, lineWidth: 0.5)
                             )
                     } else {
                         Circle()
