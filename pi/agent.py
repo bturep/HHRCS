@@ -120,8 +120,7 @@ def build_summary() -> dict:
 
     state_str  = _sm.state.value       if _sm       else "UNKNOWN"
     sim_mode   = not _detector._using_real if _detector else True
-    bridge_ok  = _camera.bridge_reachable  if _camera  else False
-    ble_state  = _camera.ble_state         if _camera  else "Unknown"
+    cam_ok     = _camera.connected          if _camera  else False
     cpu_temp   = _cpu_temp()
     in_window  = _in_recording_window()
 
@@ -190,8 +189,7 @@ def build_summary() -> dict:
         "sim_mode":                  sim_mode,
         "in_window":                 in_window,
         "cpu_temp_c":                cpu_temp,
-        "bridge_reachable":          bridge_ok,
-        "ble_state":                 ble_state,
+        "cam_reachable":             cam_ok,
         "anomalies":                 anomalies,
         "summary_line":              " ".join(parts),
         # sensor / environment
@@ -226,12 +224,12 @@ def query_agent(question: str) -> dict:
     except Exception as e:
         log.error(f"build_summary failed in query_agent: {e}")
         summary = {
-            "state": "UNKNOWN", "sim_mode": True, "ble_state": "Unknown",
+            "state": "UNKNOWN", "sim_mode": True,
             "detections_1h": 0, "anomalies": [], "summary_line": "Summary unavailable.",
             "detections_24h": 0, "last_detection": None,
             "last_detection_confidence": None, "ble_stable": True,
             "ble_drops_1h": 0, "in_window": False,
-            "cpu_temp_c": None, "bridge_reachable": False,
+            "cpu_temp_c": None, "cam_reachable": False,
         }
 
     dep_id        = None
@@ -295,10 +293,9 @@ def query_agent(question: str) -> dict:
                 f"detections_24h: {s['detections_24h']}\n"
                 f"last_detection: {s['last_detection'] or 'None'}\n"
                 f"last_detection_confidence: {s['last_detection_confidence'] or 'None'}\n"
-                f"ble_state: {s['ble_state']}\n"
+                f"cam_reachable: {s['cam_reachable']}\n"
                 f"ble_stable: {s['ble_stable']}\n"
                 f"ble_drops_1h: {s['ble_drops_1h']}\n"
-                f"bridge_reachable: {s['bridge_reachable']}\n"
                 f"cpu_temp_c: {s['cpu_temp_c']}\n"
                 f"\nENVIRONMENT ({hw_env_label} sensor)\n"
                 f"temperature_c: {s.get('temperature_c')}\n"
@@ -363,7 +360,6 @@ def query_agent(question: str) -> dict:
         "context_snapshot": {
             "state":               summary.get("state", "UNKNOWN"),
             "sim_mode":            summary.get("sim_mode", True),
-            "ble_state":           summary.get("ble_state", "Unknown"),
             "recent_trigger_count": summary.get("detections_1h", 0),
             "anomalies":           summary.get("anomalies", []),
             "deployment_id":       dep_id,
@@ -417,7 +413,6 @@ def run_passive_summary():
         "context_snapshot": {
             "state":               summary["state"],
             "sim_mode":            summary["sim_mode"],
-            "ble_state":           summary["ble_state"],
             "recent_trigger_count": summary["detections_1h"],
             "anomalies":           summary["anomalies"],
             "deployment_id":       dep_id,
