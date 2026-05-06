@@ -658,17 +658,6 @@ final class DataViewModel: ObservableObject {
         }
     }
 
-    func toggleBmpccOverlay() {
-        Task {
-            let base = AppSettings.shared.piServerURL
-            guard !base.isEmpty, let url = URL(string: base + "/camera/monitor/overlay") else { return }
-            var req = URLRequest(url: url)
-            req.httpMethod = "POST"
-            req.timeoutInterval = 5
-            _ = try? await URLSession.shared.data(for: req)
-        }
-    }
-
     // BMPCC still via ESP32 bridge
     func captureBmpccStill() async {
         await sendPiCommand("/control/still")

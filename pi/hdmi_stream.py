@@ -8,12 +8,6 @@ from config import HDMI_DEVICE, HDMI_WIDTH, HDMI_HEIGHT, HDMI_FPS
 log = logging.getLogger(__name__)
 
 
-def _is_complete_jpeg(data: bytes) -> bool:
-    return (len(data) >= 4
-            and data[:2] == b'\xff\xd8'
-            and data[-2:] == b'\xff\xd9')
-
-
 class HDMIStreamer:
     def __init__(self):
         self._cap: cv2.VideoCapture | None = None
@@ -28,7 +22,6 @@ class HDMIStreamer:
             log.warning(f"HDMIStreamer: could not open {HDMI_DEVICE} — capture card absent?")
             return
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-        cap.set(cv2.CAP_PROP_FORMAT, -1)      # skip decode — keep raw MJPEG bytes
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, HDMI_WIDTH)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HDMI_HEIGHT)
         cap.set(cv2.CAP_PROP_FPS, HDMI_FPS)
@@ -67,7 +60,7 @@ class HDMIStreamer:
         while True:
             try:
                 frame = self.capture_jpeg()
-                if frame is not None and _is_complete_jpeg(frame):
+                if frame is not None:
                     yield (
                         b"--frame\r\n"
                         b"Content-Type: image/jpeg\r\n\r\n"
@@ -83,22 +76,12 @@ class HDMIStreamer:
 
     def _read_loop(self):
         while self._running and self._cap and self._cap.isOpened():
-            ok = self._cap.grab()
+            ok, frame = self._cap.read()
             if not ok:
                 time.sleep(0.05)
                 continue
-            ok, buf = self._cap.retrieve()
-            if not ok or buf is None:
-                continue
-            raw = buf.tobytes()
-            if _is_complete_jpeg(raw):
-                # V4L2 returned raw MJPEG bytes — use directly
+            ok2, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            if ok2:
                 with self._lock:
-                    self._latest = raw
-            elif buf.ndim >= 2:
-                # Fallback: OpenCV decoded the frame; re-encode to JPEG
-                ok2, enc = cv2.imencode(".jpg", buf, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                if ok2:
-                    with self._lock:
-                        self._latest = enc.tobytes()
+                    self._latest = buf.tobytes()
         log.info("HDMIStreamer._read_loop: exiting")
