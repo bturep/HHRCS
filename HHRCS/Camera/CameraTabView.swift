@@ -88,6 +88,7 @@ struct CameraTabView: View {
                         isOwner: settings.ownerModeEnabled,
                         isRecording: vm.isPiCamRecording,
                         captureIsPlaceholder: false,
+                        recordDisabled: true,
                         onRecord: { vm.togglePiCamRecord() },
                         onCapture: { Task { await vm.captureStill() } }
                     ) { pageIndicator }
@@ -408,6 +409,7 @@ private struct OperatorControlRow<Indicator: View>: View {
     let isOwner: Bool
     let isRecording: Bool
     let captureIsPlaceholder: Bool
+    var recordDisabled: Bool = false
     let onRecord: () -> Void
     let onCapture: () -> Void
     @ViewBuilder let indicator: () -> Indicator
@@ -419,15 +421,29 @@ private struct OperatorControlRow<Indicator: View>: View {
             HStack(spacing: 0) {
                 Group {
                     if isOwner {
-                        Button {
-                            onRecord()
-                        } label: {
-                            Image(systemName: isRecording ? "stop.circle.fill" : "record.circle")
-                                .symbolRenderingMode(.monochrome)
-                                .font(.system(size: 26))
-                                .foregroundStyle(isRecording ? Theme.recordingRed : Theme.tertiary)
+                        if recordDisabled {
+                            VStack(spacing: 2) {
+                                Image(systemName: "record.circle")
+                                    .symbolRenderingMode(.monochrome)
+                                    .font(.system(size: 22))
+                                    .foregroundStyle(Theme.tertiary.opacity(0.4))
+                                Text("PROXY RECORDING — PLANNED")
+                                    .font(.system(size: 7, weight: .regular, design: .monospaced))
+                                    .foregroundStyle(Theme.tertiary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .allowsHitTesting(false)
+                        } else {
+                            Button {
+                                onRecord()
+                            } label: {
+                                Image(systemName: isRecording ? "stop.circle.fill" : "record.circle")
+                                    .symbolRenderingMode(.monochrome)
+                                    .font(.system(size: 26))
+                                    .foregroundStyle(isRecording ? Theme.recordingRed : Theme.tertiary)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     } else {
                         Color.clear
                     }

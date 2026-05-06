@@ -21,7 +21,7 @@ private let appTabs: [TabDef] = [
 // MARK: – Root view
 
 struct ContentView: View {
-    @State private var selectedTab  = 0
+    @State private var selectedTab  = 1
     @State private var isLaunched   = false
     @State private var tabBarHidden = false
     @EnvironmentObject var orientationObserver: DeviceOrientationObserver
@@ -48,7 +48,7 @@ struct ContentView: View {
             if !isLaunched {
                 LaunchView { targetTab in
                     selectedTab = targetTab
-                    withAnimation(.easeIn(duration: 0.3)) { isLaunched = true }
+                    withAnimation(.easeIn(duration: 0.5)) { isLaunched = true }
                 }
                 .transition(.opacity)
                 .zIndex(1)

@@ -3,7 +3,7 @@ import SwiftUI
 struct LaunchView: View {
     let onAdvance: (Int) -> Void
 
-    private enum Phase { case p1, p2, p3, failed(String) }
+    private enum Phase { case p1, failed(String) }
 
     @State private var phase:        Phase              = .p1
     @State private var dotCount:     Int                = 0
@@ -14,8 +14,8 @@ struct LaunchView: View {
             Color.black.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: -6) {
-                letterRow(letter: "H", word: "UNTER", letterColor: Color(hex: "FF8C00"))
-                letterRow(letter: "H", word: "OUSE",  letterColor: Color(hex: "FF8C00"))
+                letterRow(letter: "H", word: "UNTER")
+                letterRow(letter: "H", word: "OUSE")
                 letterRow(letter: "R", word: "EMOTE")
                 letterRow(letter: "C", word: "AMERA")
                 letterRow(letter: "S", word: "YSTEM")
@@ -73,7 +73,7 @@ struct LaunchView: View {
                     .padding(.horizontal, 32)
             }
 
-            Button { onAdvance(0) } label: {
+            Button { onAdvance(1) } label: {
                 Text("CONTINUE OFFLINE")
                     .font(.system(size: 10, weight: .regular, design: .monospaced))
                     .tracking(1.5)
@@ -120,8 +120,6 @@ struct LaunchView: View {
     private var phaseLabel: String {
         switch phase {
         case .p1:     return "INITIALIZING"
-        case .p2:     return "ESTABLISHING LINK"
-        case .p3:     return "CONNECTING TO FIELD"
         case .failed: return ""
         }
     }
@@ -138,47 +136,11 @@ struct LaunchView: View {
     private func runPreflight() async {
         phase = .p1
         startEllipsis()
-
-        // Phase 1: INITIALIZING — /status (advance when done, min 2s display)
-        let t1 = Date()
-        let (ok, errMsg) = await pingStatus()
-        let remain = 2.0 - Date().timeIntervalSince(t1)
-        if remain > 0 { try? await Task.sleep(nanoseconds: UInt64(remain * 1_000_000_000)) }
-
-        guard ok else {
-            stopEllipsis()
-            phase = .failed(errMsg)
-            return
-        }
-
-        // Phase 2: ESTABLISHING LINK — wait for camReachable (max 4s)
-        phase = .p2
-        let base2 = AppSettings.shared.piServerURL
-        var camUp = false
-        if !base2.isEmpty, let camURL = URL(string: base2 + "/camera/status") {
-            let deadline = Date().addingTimeInterval(4)
-            while Date() < deadline {
-                var req = URLRequest(url: camURL)
-                req.timeoutInterval = 1.5
-                if let (data, _) = try? await URLSession.shared.data(for: req),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let reachable = json["cam_reachable"] as? Bool, reachable {
-                    camUp = true
-                    break
-                }
-                try? await Task.sleep(nanoseconds: 500_000_000)
-            }
-        }
-        if !camUp {
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-        }
-
-        // Phase 3: CONNECTING TO FIELD — 4s
-        phase = .p3
-        try? await Task.sleep(nanoseconds: 4_000_000_000)
-
+        // Purely cosmetic — 2.5s display, then ContentView fades it out over 0.5s.
+        // Connectivity is reflected in the DATA tab health dots once the app is open.
+        try? await Task.sleep(nanoseconds: 2_500_000_000)
         stopEllipsis()
-        onAdvance(0)
+        onAdvance(1)
     }
 
     private func startEllipsis() {
@@ -199,31 +161,4 @@ struct LaunchView: View {
         dotCount = 0
     }
 
-    private func pingStatus() async -> (Bool, String) {
-        let base = AppSettings.shared.piServerURL
-        guard !base.isEmpty, let url = URL(string: base + "/status") else {
-            return (false, "No URL configured — open Settings")
-        }
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 8
-        do {
-            let (data, _) = try await URLSession.shared.data(for: req)
-            UserDefaults.standard.set(data, forKey: "lastKnownStatus")
-            return (true, "")
-        } catch {
-            return (false, buildOfflineSummary())
-        }
-    }
-
-    private func buildOfflineSummary() -> String {
-        if let cached = UserDefaults.standard.data(forKey: "lastKnownStatus"),
-           let json = try? JSONSerialization.jsonObject(with: cached) as? [String: Any] {
-            var parts: [String] = []
-            if let sim = json["yolo_sim_mode"] as? Bool { parts.append(sim ? "sim" : "live") }
-            if let cam = json["cam_reachable"] as? Bool { parts.append(cam ? "cam OK" : "cam unreachable") }
-            parts.append("check power and network")
-            return parts.joined(separator: " · ")
-        }
-        return "Pi unreachable · check power and network"
-    }
 }

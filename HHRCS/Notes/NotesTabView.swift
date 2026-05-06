@@ -1,8 +1,8 @@
 import SwiftUI
 
 private enum FieldSegment: String, CaseIterable {
-    case agent  = "AGENT"
     case stills = "STILLS"
+    case agent  = "AGENT"
     case log    = "LOG"
 }
 
@@ -11,7 +11,7 @@ struct NotesTabView: View {
     @ObservedObject private var settings = AppSettings.shared
 
     @StateObject private var logStore = SessionLogStore()
-    @State private var segment: FieldSegment = .agent
+    @State private var segment: FieldSegment = .stills
     @State private var agentQueryDraft = ""
     @State private var hasSentQuery      = false
     @State private var startupQueryFired  = false

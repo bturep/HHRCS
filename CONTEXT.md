@@ -56,6 +56,7 @@ ExportOptions.plist     For future ad-hoc signed builds (requires paid Apple acc
 | Target | iOS 17 / macOS 14 |
 | Tab order | FIELD · FEED · DATA · SETTINGS |
 | Active URL default | `http://raspberrypi.local:5001` (first launch) |
+| Default tab | FEED (tab 1) — `selectedTab = 1` in ContentView |
 | Tab accent color | `Theme.accentOrange` (#FF8C00) |
 | FEED images | 5s still polling (StillPoller); no MJPEG streaming. One poller runs at a time. |
 | Fake data | Disabled — stills and session log start empty |
@@ -179,6 +180,9 @@ Three targeted fixes: (1) HDMI import wrapped in `try/except ImportError` so ser
 
 **2026-05-06 — MJPEG frame integrity attempt + BMPCC HUD toggle (partially reverted)**
 First attempt: `_is_complete_jpeg()` SOI/EOI check + `CAP_PROP_FORMAT=-1` raw V4L2 bytes in `hdmi_stream.py`. Caused tiling — V4L2 splits MJPEG data across reads so fragments pass the header/footer check. Reverted to `cap.read()` → `cv2.imencode()` decode/re-encode pipeline (always produces complete JPEGs). Same check removed from `_mjpeg_frames()` in `api_server.py` (detector uses PIL encode — already valid). BMPCC HUD toggle added and then removed: `POST /camera/monitor/overlay`, `toggle_overlay()` in `camera_control.py`, `toggleBmpccOverlay()` in `DataViewModel.swift`, HUD button in `CameraTabView.swift` — all removed. BMPCC firmware 8.6 returns 404 on `/video/outputOverlay`; overlay API not implemented.
+
+**2026-05-06 — UI/UX cleanup batch**
+(1) CAM page record button disabled — `recordDisabled: true` in `OperatorControlRow`, shown at 0.4 opacity with "PROXY RECORDING — PLANNED" caption; Pi H264 recording (Phase 5) not yet built. (2) LaunchView acrostic — H/UNTER and H/OUSE now use `Theme.accentColor` (blue) like R/C/S; orange hardcode removed. (3) Launch simplified — 2.5s cosmetic sleep then `onAdvance(1)`; phases p2/p3 and connectivity checks removed; ContentView fade 0.3→0.5s. (4) Default tab changed to FEED (`selectedTab = 1`). (5) FIELD sub-tab reorder: STILLS (default) → AGENT → LOG. (6) BMPCC HUD manual workaround documented: Menu → Monitor → HDMI → Status Text → Off before deployment; no REST fix available on firmware 8.6.
 
 **2026-05-06 — FEED architecture rewrite: MJPEG → 5s still polling**
 `MJPEGPlayer.swift` and `MJPEGStreamView.swift` deleted. New `StillPoller.swift`: `ObservableObject`, `POST triggerURL` then `GET fetchURL` every 5s, publishes `latestImage: PlatformImage?` and `lastUpdated: Date?`. `CameraTabView` rewritten: two `StillPoller` instances (`hdmiPoller` for BMPCC, `camPoller` for CAM + DETECT), only one runs at a time. `StillImagePage` shows still + elapsed-seconds label (dims >15s) + refresh button. `DetectionOverlayView` updated to take `StillPoller`. Pi endpoints: BMPCC → `POST /hdmi/still` + `GET /hdmi/stills/latest`; CAM/DETECT → `POST /still/trigger` + `GET /stills/latest`. `GET /stream` and `GET /hdmi-stream` still served but not consumed by iOS.
