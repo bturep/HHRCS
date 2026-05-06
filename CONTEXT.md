@@ -95,6 +95,7 @@ Key endpoints (all base: `http://192.168.10.2/control/api/v1`):
 - `GET  /video/gain`
 - `GET  /system/format`        `PUT /system/format`
 - `GET  /media/active`
+- `GET /video/outputOverlay`   `PUT /video/outputOverlay` — **returns 404 on firmware 8.6; overlay API not implemented**; HUD toggle removed from app
 
 ---
 
@@ -175,6 +176,12 @@ Three targeted fixes: (1) HDMI import wrapped in `try/except ImportError` so ser
 
 **2026-05-06 — HDMI capture stream + BMPCC page live preview**
 `hdmi_stream.py` added: HDMIStreamer class opens `/dev/video2` via OpenCV V4L2 CAP_V4L2, MJPEG FOURCC, 1920×1080@25fps. Three new Pi endpoints: `GET /hdmi-stream` (MJPEG), `POST /hdmi/still`, `GET /hdmi/stills/latest`. `hdmi_reachable` added to `/status`. BMPCC camera tab now shows live HDMI preview (replacing StillFrameView placeholder) via a second MJPEGPlayer instance. Capture button wired to `captureHdmiStill()`. HDMI diagnostic dot added to SETTINGS DIAGNOSTIC card (sixth dot). Advisory line added: PI unreachable → red; HDMI offline + PI reachable → accentColor. `HdmiDetailView` added to DiagnosticRecovery.swift. Install on Pi: `pip install opencv-python-headless` in venv.
+
+**2026-05-06 — MJPEG frame integrity attempt + BMPCC HUD toggle (partially reverted)**
+First attempt: `_is_complete_jpeg()` SOI/EOI check + `CAP_PROP_FORMAT=-1` raw V4L2 bytes in `hdmi_stream.py`. Caused tiling — V4L2 splits MJPEG data across reads so fragments pass the header/footer check. Reverted to `cap.read()` → `cv2.imencode()` decode/re-encode pipeline (always produces complete JPEGs). Same check removed from `_mjpeg_frames()` in `api_server.py` (detector uses PIL encode — already valid). BMPCC HUD toggle added and then removed: `POST /camera/monitor/overlay`, `toggle_overlay()` in `camera_control.py`, `toggleBmpccOverlay()` in `DataViewModel.swift`, HUD button in `CameraTabView.swift` — all removed. BMPCC firmware 8.6 returns 404 on `/video/outputOverlay`; overlay API not implemented.
+
+**2026-05-06 — iOS MJPEG player boundary-aware buffering (tiling fix)**
+`MJPEGPlayer.extractFrames()` rewritten to use `--frame\r\n` multipart boundary detection instead of SOI/EOI byte scanning. Prior approach could find a false `0xFF 0xD9` (EOI) inside the JPEG bitstream, extracting a truncated frame that iOS renders with grey tiling below the valid content. New approach: find `--frame\r\n`, skip headers via `\r\n\r\n`, extract bytes up to the next `--frame\r\n` (stripping the trailing `\r\n` the Pi appends), then pass the complete JPEG to `PlatformImage(data:)`. Fixes both `/stream` and `/hdmi-stream`. No Pi changes.
 
 **2026-05-05 — ntfy.sh Layer 2 notifier + STORAGE card**
 New `notifier.py` on Pi: `send_alert()` via ntfy.sh JSON API (UTF-8 safe); `evaluate_and_notify(summary)` checks cam_unreachable / ssd_critical / ssd_high / yolo_down / cpu_temp_high with 6-hour in-memory dedup. Passive scheduler in `api_server.py` builds summary once, augments with storage + yolo_running, calls `evaluate_and_notify()` then `run_passive_summary(summary)` — single `build_summary()` call per tick. New `storage_monitor.py`: `df -B1` burn-rate tracker with daily snapshots; returns `days_remaining` after ≥2 days of data. `/status` now includes `storage` dict. iOS: `StorageSnapshot` + `StorageInfo` decodables; 6 new `@Published` vars in `DataViewModel`; `storageSection` var in `DataTabView` expanded inline (house drive bar + SSD bar + est. days remaining + burn rate). `run_passive_summary()` accepts optional pre-built `summary` dict to avoid redundant `build_summary()` call. Status bar hidden app-wide via `.statusBarHidden(true)` on root view in `HHRCSApp.swift`.

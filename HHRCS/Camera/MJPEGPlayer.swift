@@ -37,8 +37,12 @@ final class MJPEGPlayer: NSObject, ObservableObject, URLSessionDataDelegate {
     private var hasReceivedFrame = false
     private var usingFallback    = false
 
-    private static let soi = Data([0xFF, 0xD8])
-    private static let eoi = Data([0xFF, 0xD9])
+    // Multipart boundary markers sent by Flask's generate_mjpeg().
+    // Using boundary detection instead of SOI/EOI prevents partial-frame renders:
+    // JPEG bitstreams can contain 0xFF 0xD9 (false EOI) internally, causing
+    // the SOI/EOI scan to extract a truncated frame that iOS renders with grey tiling.
+    private static let boundary  = Data("--frame\r\n".utf8)
+    private static let headerEnd = Data("\r\n\r\n".utf8)
 
     init(url: URL, fallbackURL: URL? = nil) {
         self.streamURL   = url
@@ -166,22 +170,42 @@ final class MJPEGPlayer: NSObject, ObservableObject, URLSessionDataDelegate {
 
     private func extractFrames() {
         while true {
-            guard let soiRange = buffer.range(of: MJPEGPlayer.soi) else {
-                buffer.removeAll()
-                return
-            }
-            if soiRange.lowerBound > 0 {
-                buffer.removeSubrange(0..<soiRange.lowerBound)
-            }
-            guard buffer.count > 2,
-                  let eoiRange = buffer.range(of: MJPEGPlayer.eoi, in: 2..<buffer.count) else {
+            // Find the opening boundary marker.
+            guard let b1 = buffer.range(of: MJPEGPlayer.boundary) else {
                 if buffer.count > 50_000_000 { buffer.removeAll() }
                 return
             }
+            // Discard any bytes before the boundary (connection preamble, partial chunks).
+            if b1.lowerBound > 0 { buffer.removeSubrange(0..<b1.lowerBound) }
 
-            let frameEnd = eoiRange.upperBound
-            let jpegData = Data(buffer[0..<frameEnd])
-            buffer.removeSubrange(0..<frameEnd)
+            // Find the blank line that ends the MIME headers.
+            guard let headEnd = buffer.range(of: MJPEGPlayer.headerEnd,
+                                             in: MJPEGPlayer.boundary.count..<buffer.count) else {
+                return  // headers haven't fully arrived yet
+            }
+            let jpegStart = headEnd.upperBound
+
+            // Find the next boundary — it marks the end of this frame's JPEG data.
+            guard let b2 = buffer.range(of: MJPEGPlayer.boundary,
+                                        in: jpegStart..<buffer.count) else {
+                if buffer.count > 50_000_000 { buffer.removeAll() }
+                return  // frame not yet complete
+            }
+
+            // Pi appends \r\n after each JPEG before the next boundary; strip it.
+            var jpegEnd = b2.lowerBound
+            if jpegEnd >= 2 && buffer[jpegEnd - 2] == 0x0D && buffer[jpegEnd - 1] == 0x0A {
+                jpegEnd -= 2
+            }
+
+            guard jpegEnd > jpegStart else {
+                buffer.removeSubrange(0..<b2.lowerBound)
+                continue
+            }
+
+            let jpegData = Data(buffer[jpegStart..<jpegEnd])
+            // Advance buffer to the start of the next boundary for the next iteration.
+            buffer.removeSubrange(0..<b2.lowerBound)
 
             guard let img = PlatformImage(data: jpegData) else { continue }
 
