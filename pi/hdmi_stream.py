@@ -10,37 +10,42 @@ from config import HDMI_DEVICE, HDMI_WIDTH, HDMI_HEIGHT, HDMI_FPS
 log = logging.getLogger(__name__)
 
 
-# BMPCC-style false color LUT — 256-entry lookup table mapping 8-bit luminance
-# to BGR color. Matches Blackmagic's actual narrow-band scheme: most pixels stay
-# monochrome grey; only specific IRE reference zones receive a distinct color so
-# image definition is preserved and exposure is readable at a glance.
+# BMPCC-accurate false color LUT — smooth gradient interpolation between six
+# labeled IRE anchor points. No grey zones, no hard band edges. Every pixel
+# receives a color; image definition is preserved through gradient texture.
 #
-# Reference bands (IRE → color):
-#   BDL   (0–2):    black          — clipped black
-#   NBDL  (2–4):    bright blue    — near-black warning
-#   18%MG (38–42):  green          — 18% middle grey reference
-#   MG+1  (52–58):  pink           — one stop above middle grey (skin tone)
-#   80%WC (78–82):  yellow         — highlight warning
-#   95%WC (95–100): red            — clipped white
+# Anchor points (IRE → BGR):
+#   BDL   (0):   deep purple — crushed black
+#   NBDL  (4):   bright blue — near-black warning
+#   18%MG (40):  green       — 18% middle grey reference
+#   MG+1  (55):  pink        — one stop above middle grey (skin tone)
+#   80%WC (80):  yellow      — highlight warning
+#   95%WC (95):  red         — clipped white
 def _build_false_color_lut() -> np.ndarray:
+    """Smooth gradient interpolation between BMPCC reference anchors. Never raises."""
+    anchors = [                   # (IRE, B, G, R)
+        (  0, 130,   0,  80),    # BDL   — deep purple
+        (  4, 255,  80,   0),    # NBDL  — bright blue
+        ( 40,   0, 200,   0),    # 18%MG — green
+        ( 55, 200, 100, 240),    # MG+1  — pink
+        ( 80,   0, 220, 240),    # 80%WC — yellow
+        ( 95,   0,   0, 255),    # 95%WC — red
+        (100,   0,   0, 255),    # clip
+    ]
     lut = np.zeros((256, 1, 3), dtype=np.uint8)
     for v in range(256):
         ire = (v / 255.0) * 100.0
-        if ire <= 2:
-            lut[v, 0] = (  0,   0,   0)   # BDL   — black
-        elif ire <= 4:
-            lut[v, 0] = (255, 100,   0)   # NBDL  — bright blue (BGR)
-        elif 38 <= ire <= 42:
-            lut[v, 0] = (  0, 220,   0)   # 18%MG — green
-        elif 52 <= ire <= 58:
-            lut[v, 0] = (200, 100, 240)   # MG+1  — pink
-        elif 78 <= ire <= 82:
-            lut[v, 0] = (  0, 220, 240)   # 80%WC — yellow
-        elif ire >= 95:
-            lut[v, 0] = (  0,   0, 255)   # 95%WC — red
+        for i in range(len(anchors) - 1):
+            ire_a, b_a, g_a, r_a = anchors[i]
+            ire_b, b_b, g_b, r_b = anchors[i + 1]
+            if ire_a <= ire <= ire_b:
+                t          = (ire - ire_a) / (ire_b - ire_a) if ire_b > ire_a else 0.0
+                lut[v, 0]  = (int(round(b_a + (b_b - b_a) * t)),
+                               int(round(g_a + (g_b - g_a) * t)),
+                               int(round(r_a + (r_b - r_a) * t)))
+                break
         else:
-            grey       = int(v * 0.7)     # dimmed grey preserves image definition
-            lut[v, 0]  = (grey, grey, grey)
+            lut[v, 0] = (255, 255, 255)   # fallback; unreachable with 0–100 coverage
     return lut
 
 _FALSE_COLOR_LUT = _build_false_color_lut()

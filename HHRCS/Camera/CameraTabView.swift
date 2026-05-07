@@ -431,42 +431,19 @@ final class FalseColorPoller: ObservableObject {
 
 // MARK: – False color IRE scale bar
 
-// Narrow-band gradient bar matching the corrected BMPCC false color scheme.
-// Most of the bar is desaturated grey; six reference bands interrupt it.
+// Smooth gradient bar matching the BMPCC false color LUT anchors.
+// Continuous purple→blue→green→pink→yellow→red; labels mark the reference IRE points.
 // Shown below the image when display mode is .falseColor.
 private struct FalseColorScalebar: View {
-    // Paired duplicate-location stops create sharp (step) transitions at band edges.
+    // Smooth gradient matching the Pi LUT anchors (BGR→RGB conversion applied).
     private static let gradientStops: [Gradient.Stop] = [
-        // BDL: 0–2 IRE — black
-        .init(color: .black,                                              location: 0.000),
-        .init(color: .black,                                              location: 0.020),
-        // NBDL: 2–4 IRE — bright blue
-        .init(color: Color(red: 0, green: 100/255, blue: 1),             location: 0.020),
-        .init(color: Color(red: 0, green: 100/255, blue: 1),             location: 0.040),
-        // 4–38 IRE: dimmed grey gradient
-        .init(color: Color(white:  7/255),                                location: 0.040),
-        .init(color: Color(white: 67/255),                                location: 0.380),
-        // 18% MG: 38–42 IRE — green
-        .init(color: Color(red: 0, green: 220/255, blue: 0),             location: 0.380),
-        .init(color: Color(red: 0, green: 220/255, blue: 0),             location: 0.420),
-        // 42–52 IRE: grey
-        .init(color: Color(white: 75/255),                                location: 0.420),
-        .init(color: Color(white: 92/255),                                location: 0.520),
-        // MG+1: 52–58 IRE — pink
-        .init(color: Color(red: 240/255, green: 100/255, blue: 200/255), location: 0.520),
-        .init(color: Color(red: 240/255, green: 100/255, blue: 200/255), location: 0.580),
-        // 58–78 IRE: grey
-        .init(color: Color(white: 103/255),                               location: 0.580),
-        .init(color: Color(white: 139/255),                               location: 0.780),
-        // 80% WC: 78–82 IRE — yellow
-        .init(color: Color(red: 240/255, green: 220/255, blue: 0),       location: 0.780),
-        .init(color: Color(red: 240/255, green: 220/255, blue: 0),       location: 0.820),
-        // 82–95 IRE: grey
-        .init(color: Color(white: 146/255),                               location: 0.820),
-        .init(color: Color(white: 169/255),                               location: 0.950),
-        // 95% WC: 95–100 IRE — red
-        .init(color: .red,                                                location: 0.950),
-        .init(color: .red,                                                location: 1.000),
+        .init(color: Color(red:  80/255, green:   0,       blue: 130/255), location: 0.00), // BDL   — deep purple
+        .init(color: Color(red:   0,     green:  80/255,   blue:   1),     location: 0.04), // NBDL  — bright blue
+        .init(color: Color(red:   0,     green: 200/255,   blue:   0),     location: 0.40), // 18%MG — green
+        .init(color: Color(red: 240/255, green: 100/255,   blue: 200/255), location: 0.55), // MG+1  — pink
+        .init(color: Color(red: 240/255, green: 220/255,   blue:   0),     location: 0.80), // 80%WC — yellow
+        .init(color: .red,                                                   location: 0.95), // 95%WC — red
+        .init(color: .red,                                                   location: 1.00), // clip
     ]
 
     var body: some View {

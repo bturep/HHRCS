@@ -102,17 +102,17 @@ Pi HDMI endpoints (base: `http://raspberrypi.local:5001`):
 - `GET  /hdmi/histogram` — per-channel 64-bin histogram; returns `{"luma":{...}, "r":{...}, "g":{...}, "b":{...}, "ts":ISO8601}`. Each channel has `bins:[64 ints]`, `clipped_low_pct`, `clipped_high_pct`. Throttled to 1Hz on Pi.
 - `GET  /hdmi/falsecolor` — BMPCC-style false color JPEG (1920×1080, Q80) of latest HDMI frame. Throttled to 1Hz. 503 if HDMI offline.
 
-**BMPCC false color reference bands (narrow-band IRE scheme):**
-| Band | IRE range | Color | Meaning |
-|------|-----------|-------|---------|
-| BDL   | 0–2     | Black       | Clipped black |
-| NBDL  | 2–4     | Bright blue | Near-black warning |
-| 18%MG | 38–42   | Green       | 18% middle grey reference |
-| MG+1  | 52–58   | Pink        | One stop above middle grey (skin tone) |
-| 80%WC | 78–82   | Yellow      | Highlight warning |
-| 95%WC | 95–100  | Red         | Clipped white |
+**BMPCC false color — smooth gradient interpolation between IRE anchors:**
+| Anchor | IRE | Color | Meaning |
+|--------|-----|-------|---------|
+| BDL    | 0   | Deep purple | Crushed black |
+| NBDL   | 4   | Bright blue | Near-black warning |
+| 18%MG  | 40  | Green       | 18% middle grey reference |
+| MG+1   | 55  | Pink        | Skin tone / one stop above MG |
+| 80%WC  | 80  | Yellow      | Highlight warning |
+| 95%WC  | 95  | Red         | Clipped white |
 
-All other IRE values render as desaturated grey (`v × 0.7`) so image definition is preserved.
+Continuous gradient; no grey zones. Every pixel gets a color interpolated between the nearest two anchors. Image definition is preserved through gradient texture.
 
 **HDMI letterbox auto-detection:** `_detect_active_image_area()` scans row/column luminance means from each edge; any row/column below threshold 8/255 is treated as a black bar. Active area is cached and rechecked every ~25 frames (~1s), so codec/aspect ratio changes (e.g. switching between 4K DCI 17:9 and 16:9) are picked up without restart. Both `compute_histogram()` and `compute_false_color()` operate only on the detected active area — letterbox bars stay black in false color output and are excluded from histogram pixel counts. A 50% sanity-check falls back to the full frame when the scene is very dark (no bars detectable).
 
@@ -230,6 +230,9 @@ First attempt: `_is_complete_jpeg()` SOI/EOI check + `CAP_PROP_FORMAT=-1` raw V4
 
 **2026-05-06 — Histogram endpoint + iOS exposure monitoring** *(histogram code deployed to Pi 2026-05-06; was written locally last session but never scp'd)*
 New Pi endpoint `GET /hdmi/histogram`: returns `{"bins":[64 ints], "clipped_low_pct":float, "clipped_high_pct":float, "ts":ISO8601}` from latest HDMI frame; throttled to 1Hz in `_read_loop`; 503 if HDMI offline. New iOS `HistogramView.swift`: `HistogramPoller` (ObservableObject, polls every 5s) + `HistogramView` (Canvas-based 64-bar rendering; bins 0/63 turn `recordingRed` when clipping >2%; clipping label shown when either value ≥0.5%). `CameraTabView` wires `histogramPoller` to BMPCC page only — starts/stops with `hdmiPoller`; `StillImagePage` gains `bins`/`clippedLow`/`clippedHigh` params, shows histogram strip below image (`.cardBackground` background). Tap-to-fullscreen added to `StillImagePage`: tapping the image opens `FullscreenImageView` with histogram overlay. `FullscreenImageView` updated: close button repositioned to `safeAreaInsets.top + 16` (Dynamic Island safe), 44×44 tap target with `contentShape(Rectangle())`; histogram pinned at bottom with `cardBackground.opacity(0.75)`. Landscape padding fix: `.padding(.bottom, isLandscape ? 0 : 54)` on all three FEED tab pages. **BMPCC operator setup (before deployment):** Menu → Monitor → HDMI → Status Text → Off; Display 3D LUT → Off (ensures histogram reads true log data).
+
+**2026-05-06 — False color LUT rebuilt as smooth gradient interpolation (BMPCC accurate)**
+False color rebuilt as smooth gradient interpolation between BMPCC reference anchors. Previous narrow-band approach was incorrect — BMPCC uses continuous gradients with labeled reference points as landmarks, not isolated band colors. Image definition is preserved through gradient texture, not grey neutral zones. `_build_false_color_lut()` replaced with linear interpolation between 7 anchor points `(IRE, B, G, R)`: BDL (0) deep purple → NBDL (4) blue → 18%MG (40) green → MG+1 (55) pink → 80%WC (80) yellow → 95%WC/clip (95–100) red. Every pixel in 0–255 maps to an interpolated BGR color; no grey zones; no fallback paths reached under normal input. iOS `FalseColorScalebar.gradientStops` updated to 7 smooth stops (no duplicate-location pairs, no step transitions). Deployment: HTTP 200, 98027 bytes, JPEG 1920×1080.
 
 **2026-05-06 — HDMI letterbox auto-detection for false color and histogram**
 `_detect_active_image_area(frame)` added to `hdmi_stream.py`: scans row/column luminance means (threshold 8/255) from each edge to find the active image boundary, excluding HDMI letterbox bars (e.g. 4K DCI 17:9 framed into 16:9 HDMI produces ~34px black bars top and bottom). Result cached on `HDMIStreamer` and rechecked every 25 frames (~1s). `_get_crop(frame)` method encapsulates the cache logic. Both `compute_histogram()` and `compute_false_color()` updated to crop to the active area before processing. In false color, letterbox bars stay black (output frame is zero-initialized; only the active crop is colorized). In histogram, `total` pixel count uses the cropped shape so `clipped_low_pct` reflects real shadow content, not bar pixels. Verification: `luma clipped_low_pct: 0.0` (down from inflated value caused by counting letterbox black pixels as crushed shadows). False color: HTTP 200, 170183 bytes, JPEG 1920×1080.
