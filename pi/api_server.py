@@ -684,13 +684,23 @@ def hdmi_stills_latest():
 
 @app.route("/hdmi/histogram", methods=["GET"])
 def hdmi_histogram():
-    """64-bin grayscale histogram of the latest HDMI frame, throttled to 1Hz on Pi."""
+    """Per-channel 64-bin histogram (luma/R/G/B) of the latest HDMI frame, throttled to 1Hz."""
     if _hdmi is None:
         return jsonify({"error": "HDMI capture not available"}), 503
     hist = _hdmi.latest_histogram()
     if hist is None:
         return jsonify({"error": "no histogram data yet"}), 503
     return jsonify(hist)
+
+@app.route("/hdmi/falsecolor", methods=["GET"])
+def hdmi_falsecolor():
+    """BMPCC-style false color JPEG of the latest HDMI frame, throttled to 1Hz."""
+    if _hdmi is None:
+        return jsonify({"error": "hdmi unavailable"}), 503
+    jpeg_bytes = _hdmi.latest_false_color()
+    if jpeg_bytes is None:
+        return jsonify({"error": "no frames yet"}), 503
+    return Response(jpeg_bytes, mimetype="image/jpeg")
 
 # ── Event bus endpoints ────────────────────────────────────────────────────────
 
