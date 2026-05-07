@@ -1244,7 +1244,7 @@ private struct DeploymentChecklistCard: View {
                 .padding(.top, 1)
                 Text(item.label)
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .foregroundStyle(isChecked ? Theme.secondary : Theme.fg)
+                    .foregroundStyle(isChecked ? Theme.secondary : Theme.text)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer()
             }
