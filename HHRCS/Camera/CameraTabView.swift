@@ -431,28 +431,52 @@ final class FalseColorPoller: ObservableObject {
 
 // MARK: – False color IRE scale bar
 
-// Thin gradient bar mapping IRE 0-100 to BMPCC false color scheme.
+// Narrow-band gradient bar matching the corrected BMPCC false color scheme.
+// Most of the bar is desaturated grey; six reference bands interrupt it.
 // Shown below the image when display mode is .falseColor.
 private struct FalseColorScalebar: View {
+    // Paired duplicate-location stops create sharp (step) transitions at band edges.
     private static let gradientStops: [Gradient.Stop] = [
-        .init(color: Color(red: 130/255, green:   0,       blue: 180/255), location: 0.000), // purple
-        .init(color: Color(red:   0,     green:  80/255,   blue: 200/255), location: 0.025), // blue
-        .init(color: Color(white: 60/255),                                  location: 0.100), // dark grey
-        .init(color: Color(red:   0,     green: 200/255,   blue:   0),     location: 0.350), // green
-        .init(color: Color(white: 180/255),                                 location: 0.550), // light grey
-        .init(color: Color(red: 240/255, green: 100/255,   blue: 200/255), location: 0.650), // pink
-        .init(color: Color(red: 240/255, green: 220/255,   blue:   0),     location: 0.780), // yellow
-        .init(color: Color(red:   1,     green: 140/255,   blue:   0),     location: 0.880), // orange
-        .init(color: Color(red:   1,     green:   0,       blue:   0),     location: 0.970), // red
-        .init(color: Color(red:   1,     green:   0,       blue:   0),     location: 1.000), // red end
+        // BDL: 0–2 IRE — black
+        .init(color: .black,                                              location: 0.000),
+        .init(color: .black,                                              location: 0.020),
+        // NBDL: 2–4 IRE — bright blue
+        .init(color: Color(red: 0, green: 100/255, blue: 1),             location: 0.020),
+        .init(color: Color(red: 0, green: 100/255, blue: 1),             location: 0.040),
+        // 4–38 IRE: dimmed grey gradient
+        .init(color: Color(white:  7/255),                                location: 0.040),
+        .init(color: Color(white: 67/255),                                location: 0.380),
+        // 18% MG: 38–42 IRE — green
+        .init(color: Color(red: 0, green: 220/255, blue: 0),             location: 0.380),
+        .init(color: Color(red: 0, green: 220/255, blue: 0),             location: 0.420),
+        // 42–52 IRE: grey
+        .init(color: Color(white: 75/255),                                location: 0.420),
+        .init(color: Color(white: 92/255),                                location: 0.520),
+        // MG+1: 52–58 IRE — pink
+        .init(color: Color(red: 240/255, green: 100/255, blue: 200/255), location: 0.520),
+        .init(color: Color(red: 240/255, green: 100/255, blue: 200/255), location: 0.580),
+        // 58–78 IRE: grey
+        .init(color: Color(white: 103/255),                               location: 0.580),
+        .init(color: Color(white: 139/255),                               location: 0.780),
+        // 80% WC: 78–82 IRE — yellow
+        .init(color: Color(red: 240/255, green: 220/255, blue: 0),       location: 0.780),
+        .init(color: Color(red: 240/255, green: 220/255, blue: 0),       location: 0.820),
+        // 82–95 IRE: grey
+        .init(color: Color(white: 146/255),                               location: 0.820),
+        .init(color: Color(white: 169/255),                               location: 0.950),
+        // 95% WC: 95–100 IRE — red
+        .init(color: .red,                                                location: 0.950),
+        .init(color: .red,                                                location: 1.000),
     ]
 
     var body: some View {
         VStack(spacing: 3) {
+            // Gradient bar
             Rectangle()
                 .fill(LinearGradient(stops: Self.gradientStops,
                                      startPoint: .leading, endPoint: .trailing))
                 .frame(height: 4)
+            // IRE position labels
             HStack {
                 Text("0")
                 Spacer()
@@ -466,6 +490,28 @@ private struct FalseColorScalebar: View {
             }
             .font(.system(size: 7, weight: .regular, design: .monospaced))
             .foregroundStyle(Theme.tertiary)
+            // Reference band legend — positioned at approximate IRE fractions
+            Canvas { ctx, size in
+                let items: [(String, CGFloat, UnitPoint)] = [
+                    ("BDL",   0.010, UnitPoint(x: 0,   y: 0.5)),
+                    ("NBDL",  0.060, UnitPoint(x: 0,   y: 0.5)),
+                    ("18%MG", 0.400, UnitPoint(x: 0.5, y: 0.5)),
+                    ("MG+1",  0.550, UnitPoint(x: 0.5, y: 0.5)),
+                    ("80%WC", 0.800, UnitPoint(x: 0.5, y: 0.5)),
+                    ("95%WC", 0.990, UnitPoint(x: 1,   y: 0.5)),
+                ]
+                for (label, frac, anchor) in items {
+                    let resolved = ctx.resolve(
+                        Text(label)
+                            .font(.system(size: 8, weight: .regular, design: .monospaced))
+                            .foregroundColor(Color(white: 0.30))
+                    )
+                    ctx.draw(resolved,
+                             at: CGPoint(x: size.width * frac, y: size.height / 2),
+                             anchor: anchor)
+                }
+            }
+            .frame(height: 10)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)

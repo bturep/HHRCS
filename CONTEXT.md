@@ -102,6 +102,18 @@ Pi HDMI endpoints (base: `http://raspberrypi.local:5001`):
 - `GET  /hdmi/histogram` — per-channel 64-bin histogram; returns `{"luma":{...}, "r":{...}, "g":{...}, "b":{...}, "ts":ISO8601}`. Each channel has `bins:[64 ints]`, `clipped_low_pct`, `clipped_high_pct`. Throttled to 1Hz on Pi.
 - `GET  /hdmi/falsecolor` — BMPCC-style false color JPEG (1920×1080, Q80) of latest HDMI frame. Throttled to 1Hz. 503 if HDMI offline.
 
+**BMPCC false color reference bands (narrow-band IRE scheme):**
+| Band | IRE range | Color | Meaning |
+|------|-----------|-------|---------|
+| BDL   | 0–2     | Black       | Clipped black |
+| NBDL  | 2–4     | Bright blue | Near-black warning |
+| 18%MG | 38–42   | Green       | 18% middle grey reference |
+| MG+1  | 52–58   | Pink        | One stop above middle grey (skin tone) |
+| 80%WC | 78–82   | Yellow      | Highlight warning |
+| 95%WC | 95–100  | Red         | Clipped white |
+
+All other IRE values render as desaturated grey (`v × 0.7`) so image definition is preserved.
+
 **BMPCC operator setup (before deployment):**
 - Menu → Monitor → HDMI → Status Text → **Off** (removes firmware overlay from HDMI output)
 - Menu → Monitor → HDMI → Display 3D LUT → **Off** (ensures histogram reads true log data)
@@ -216,6 +228,9 @@ First attempt: `_is_complete_jpeg()` SOI/EOI check + `CAP_PROP_FORMAT=-1` raw V4
 
 **2026-05-06 — Histogram endpoint + iOS exposure monitoring** *(histogram code deployed to Pi 2026-05-06; was written locally last session but never scp'd)*
 New Pi endpoint `GET /hdmi/histogram`: returns `{"bins":[64 ints], "clipped_low_pct":float, "clipped_high_pct":float, "ts":ISO8601}` from latest HDMI frame; throttled to 1Hz in `_read_loop`; 503 if HDMI offline. New iOS `HistogramView.swift`: `HistogramPoller` (ObservableObject, polls every 5s) + `HistogramView` (Canvas-based 64-bar rendering; bins 0/63 turn `recordingRed` when clipping >2%; clipping label shown when either value ≥0.5%). `CameraTabView` wires `histogramPoller` to BMPCC page only — starts/stops with `hdmiPoller`; `StillImagePage` gains `bins`/`clippedLow`/`clippedHigh` params, shows histogram strip below image (`.cardBackground` background). Tap-to-fullscreen added to `StillImagePage`: tapping the image opens `FullscreenImageView` with histogram overlay. `FullscreenImageView` updated: close button repositioned to `safeAreaInsets.top + 16` (Dynamic Island safe), 44×44 tap target with `contentShape(Rectangle())`; histogram pinned at bottom with `cardBackground.opacity(0.75)`. Landscape padding fix: `.padding(.bottom, isLandscape ? 0 : 54)` on all three FEED tab pages. **BMPCC operator setup (before deployment):** Menu → Monitor → HDMI → Status Text → Off; Display 3D LUT → Off (ensures histogram reads true log data).
+
+**2026-05-06 — False color LUT corrected to BMPCC narrow-band scheme**
+`hdmi_stream.py` `_build_false_color_lut()` replaced. Old LUT painted every pixel a band color (9 solid bands), which flattened image definition and didn't match BMPCC behavior. New LUT: most pixels map to desaturated grey (`v × 0.7`); only 6 narrow reference bands receive color — BDL (0–2 IRE, black), NBDL (2–4, bright blue), 18%MG (38–42, green), MG+1 (52–58, pink), 80%WC (78–82, yellow), 95%WC (95–100, red). Grey areas preserve image texture so image definition is readable. JPEG output size increased from ~92 KB to ~175 KB as expected (grey texture requires more JPEG bits than solid color). iOS `FalseColorScalebar` gradient stops updated to match: paired duplicate-location stops create sharp step transitions at band edges; grey zones use per-IRE grey values matching LUT. Legend row added below IRE labels using Canvas text draw: BDL · NBDL · 18%MG · MG+1 · 80%WC · 95%WC positioned at their approximate IRE fractions. Deployment curl: HTTP 200, 174636 bytes, JPEG 1920×1080.
 
 **2026-05-06 — False color, RGB histogram modes, gesture cleanup**
 Pi changes: (1) `hdmi_stream.py` — BMPCC-style false color LUT (`_build_false_color_lut()`, `_FALSE_COLOR_LUT`); `compute_false_color(frame)` converts BGR→gray, applies 256-entry LUT via numpy indexing, re-encodes as JPEG Q80; `compute_histogram()` extended to return per-channel data `{luma, r, g, b, ts}` — each channel has `bins:[64 ints]`, `clipped_low_pct`, `clipped_high_pct`; both computed at 1Hz in same throttle block. (2) `api_server.py` — `GET /hdmi/falsecolor` endpoint returns JPEG bytes or 503. BMPCC IRE→color scheme: 0–2.5 purple, 2.5–10 blue, 10–35 dark grey, 35–55 green (18% grey), 55–65 light grey, 65–78 pink (skin), 78–88 yellow, 88–97 orange, 97–100 red. iOS changes: (3) `HistogramView.swift` — `HistogramStyle` replaced by `HistogramChannel` enum (luma/rgbOverlap/rgbStacked); `ChannelHistogram` struct; `HistogramPoller` updated to parse new JSON; tap cycles channel mode via `@AppStorage("histogramChannel")`; only filled curve rendering; rgbOverlap draws B/G/R at 0.5 opacity; rgbStacked draws three horizontal bands with 0.5pt separators; clipping ticks use `anyClippedLow/High` (max across all channels). (4) `CameraTabView.swift` — `FalseColorPoller` class (GET every 5s); `DisplayMode` enum (still/falseColor); `FalseColorScalebar` view (4pt gradient bar + IRE labels 0 25 50 75 100); `StillImagePage` updated: long-press cycles still↔falseColor via `@AppStorage("bmpccDisplayMode")`; in falseColor mode shows FC image + scalebar instead of regular still + histogram; `.contentShape(Rectangle())` + `.contextMenu {}` suppress iOS image preview; tap→fullscreen only in still mode; `HistogramView` now takes luma/r/g/b `ChannelHistogram`. `FullscreenImageView` updated to take luma/r/g/b. Deployment: histogram HTTP 200 `keys:['b','g','luma','r','ts']` has_rgb:True; falsecolor HTTP 200, 91625 bytes, JPEG 1920×1080.

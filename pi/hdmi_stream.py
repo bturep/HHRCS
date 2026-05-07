@@ -11,20 +11,36 @@ log = logging.getLogger(__name__)
 
 
 # BMPCC-style false color LUT — 256-entry lookup table mapping 8-bit luminance
-# to BGR color matching Blackmagic's documented IRE scheme.
+# to BGR color. Matches Blackmagic's actual narrow-band scheme: most pixels stay
+# monochrome grey; only specific IRE reference zones receive a distinct color so
+# image definition is preserved and exposure is readable at a glance.
+#
+# Reference bands (IRE → color):
+#   BDL   (0–2):    black          — clipped black
+#   NBDL  (2–4):    bright blue    — near-black warning
+#   18%MG (38–42):  green          — 18% middle grey reference
+#   MG+1  (52–58):  pink           — one stop above middle grey (skin tone)
+#   80%WC (78–82):  yellow         — highlight warning
+#   95%WC (95–100): red            — clipped white
 def _build_false_color_lut() -> np.ndarray:
     lut = np.zeros((256, 1, 3), dtype=np.uint8)
     for v in range(256):
         ire = (v / 255.0) * 100.0
-        if ire < 2.5:    lut[v, 0] = (180,   0, 130)   # purple  — crushed black
-        elif ire < 10:   lut[v, 0] = (200,  80,   0)   # blue    — shadow detail
-        elif ire < 35:   lut[v, 0] = ( 60,  60,  60)   # dark grey — lower mids
-        elif ire < 55:   lut[v, 0] = (  0, 200,   0)   # green   — 18% middle grey
-        elif ire < 65:   lut[v, 0] = (180, 180, 180)   # light grey — upper mids
-        elif ire < 78:   lut[v, 0] = (200, 100, 240)   # pink    — caucasian skin
-        elif ire < 88:   lut[v, 0] = (  0, 220, 240)   # yellow  — highlights
-        elif ire < 97:   lut[v, 0] = (  0, 140, 255)   # orange  — near clipping
-        else:            lut[v, 0] = (  0,   0, 255)   # red     — clipped
+        if ire <= 2:
+            lut[v, 0] = (  0,   0,   0)   # BDL   — black
+        elif ire <= 4:
+            lut[v, 0] = (255, 100,   0)   # NBDL  — bright blue (BGR)
+        elif 38 <= ire <= 42:
+            lut[v, 0] = (  0, 220,   0)   # 18%MG — green
+        elif 52 <= ire <= 58:
+            lut[v, 0] = (200, 100, 240)   # MG+1  — pink
+        elif 78 <= ire <= 82:
+            lut[v, 0] = (  0, 220, 240)   # 80%WC — yellow
+        elif ire >= 95:
+            lut[v, 0] = (  0,   0, 255)   # 95%WC — red
+        else:
+            grey       = int(v * 0.7)     # dimmed grey preserves image definition
+            lut[v, 0]  = (grey, grey, grey)
     return lut
 
 _FALSE_COLOR_LUT = _build_false_color_lut()
