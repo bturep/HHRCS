@@ -10,42 +10,47 @@ from config import HDMI_DEVICE, HDMI_WIDTH, HDMI_HEIGHT, HDMI_FPS
 log = logging.getLogger(__name__)
 
 
-# BMPCC-accurate false color LUT — smooth gradient interpolation between six
-# labeled IRE anchor points. No grey zones, no hard band edges. Every pixel
-# receives a color; image definition is preserved through gradient texture.
+# ARRI/BMPCC false color LUT — narrow reference bands with luminance-preserving
+# grayscale between them. Most of the image stays grey, revealing texture and
+# detail; only reference exposure zones receive color.
 #
-# Anchor points (IRE → BGR):
-#   BDL   (0):   deep purple — crushed black
-#   NBDL  (4):   bright blue — near-black warning
-#   18%MG (40):  green       — 18% middle grey reference
-#   MG+1  (55):  pink        — one stop above middle grey (skin tone)
-#   80%WC (80):  yellow      — highlight warning
-#   95%WC (95):  red         — clipped white
+# IRE bands (BGR for OpenCV):
+#   0.0–2.5   Purple (130,0,100)  — black detail loss
+#   2.5–4.0   Blue   (255,100,0)  — near-black detail loss
+#   38.0–42.0 Green  (0,220,0)    — 18% middle grey reference
+#   52.0–56.0 Pink   (200,100,240)— skin tone (1 stop over middle grey)
+#   97.0–99.0 Yellow (0,220,240)  — near-white clipping warning
+#   99.0–100  Red    (0,0,255)    — white clipping
+#
+# Yellow/Red thresholds at 97/99 IRE (not 80/95) account for 8-bit HDMI
+# signal compression vs 12-bit sensor log — highlights read slightly hot.
 def _build_false_color_lut() -> np.ndarray:
-    """Smooth gradient interpolation between BMPCC reference anchors. Never raises."""
-    anchors = [                   # (IRE, B, G, R)
-        (  0, 130,   0,  80),    # BDL   — deep purple
-        (  4, 255,  80,   0),    # NBDL  — bright blue
-        ( 40,   0, 200,   0),    # 18%MG — green
-        ( 55, 200, 100, 240),    # MG+1  — pink
-        ( 80,   0, 220, 240),    # 80%WC — yellow
-        ( 95,   0,   0, 255),    # 95%WC — red
-        (100,   0,   0, 255),    # clip
-    ]
+    """ARRI/BMPCC-style false color: narrow color bands, grayscale between. Never raises."""
+    PURPLE = (130,   0, 100)
+    BLUE   = (255, 100,   0)
+    GREEN  = (  0, 220,   0)
+    PINK   = (200, 100, 240)
+    YELLOW = (  0, 220, 240)
+    RED    = (  0,   0, 255)
+
     lut = np.zeros((256, 1, 3), dtype=np.uint8)
     for v in range(256):
         ire = (v / 255.0) * 100.0
-        for i in range(len(anchors) - 1):
-            ire_a, b_a, g_a, r_a = anchors[i]
-            ire_b, b_b, g_b, r_b = anchors[i + 1]
-            if ire_a <= ire <= ire_b:
-                t          = (ire - ire_a) / (ire_b - ire_a) if ire_b > ire_a else 0.0
-                lut[v, 0]  = (int(round(b_a + (b_b - b_a) * t)),
-                               int(round(g_a + (g_b - g_a) * t)),
-                               int(round(r_a + (r_b - r_a) * t)))
-                break
+        if ire < 2.5:
+            bgr = PURPLE
+        elif ire < 4.0:
+            bgr = BLUE
+        elif 38.0 <= ire <= 42.0:
+            bgr = GREEN
+        elif 52.0 <= ire <= 56.0:
+            bgr = PINK
+        elif 97.0 <= ire < 99.0:
+            bgr = YELLOW
+        elif ire >= 99.0:
+            bgr = RED
         else:
-            lut[v, 0] = (255, 255, 255)   # fallback; unreachable with 0–100 coverage
+            bgr = (v, v, v)
+        lut[v, 0] = bgr
     return lut
 
 _FALSE_COLOR_LUT = _build_false_color_lut()
