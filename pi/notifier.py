@@ -103,6 +103,14 @@ def _build_checks(summary: dict) -> list:
             "urgent",
             ["rotating_light", "floppy_disk"],
         ))
+    elif days_remaining is not None and days_remaining < 7:
+        checks.append((
+            "ssd_warning",
+            "HHRCS — SSD Low",
+            f"~{days_remaining:.1f} days remaining at current burn rate ({free_gb} GB free).",
+            "high",
+            ["warning", "floppy_disk"],
+        ))
     elif used_pct is not None and used_pct >= 90:
         checks.append((
             "ssd_high",
@@ -122,7 +130,7 @@ def _build_checks(summary: dict) -> list:
             ["warning", "eye"],
         ))
 
-    # Pi CPU temperature
+    # Pi CPU temperature — production threshold 80°C; test_ntfy.sh uses 85°C to fire above it
     cpu_temp = summary.get("cpu_temp_c")
     if cpu_temp is not None and cpu_temp > 80:
         checks.append((

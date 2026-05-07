@@ -1,8 +1,7 @@
 #!/bin/bash
 # HHRCS ntfy.sh end-to-end test
 # Usage: bash test_ntfy.sh [condition]
-#   condition: ssd_critical | ssd_warning | temp_high | cam_unreachable | ble_down | all (default)
-#   ble_down is an alias for yolo_down (BLE removed; maps to YOLO-down condition)
+#   condition: ssd_critical | ssd_warning | ssd_high | temp_high | cam_unreachable | yolo_down | all (default)
 set -e
 cd /home/pi/hhrcs
 source venv/bin/activate
@@ -13,7 +12,7 @@ import notifier
 
 condition = sys.argv[1] if len(sys.argv) > 1 else 'all'
 
-CONDITIONS = ['ssd_critical', 'ssd_warning', 'temp_high', 'cam_unreachable', 'ble_down']
+CONDITIONS = ['ssd_critical', 'ssd_warning', 'ssd_high', 'temp_high', 'cam_unreachable', 'yolo_down']
 
 
 def fake_summary(c):
@@ -21,19 +20,27 @@ def fake_summary(c):
         'cam_reachable': True,
         'yolo_running':  True,
         'cpu_temp_c':    55,
-        'storage': {'days_remaining': 8, 'free_gb': 120, 'used_pct': 30},
+        'storage': {
+            'free_gb':        1500,
+            'used_pct':       30,
+            'days_remaining': 30.0,
+        },
     }
     if c == 'ssd_critical':
-        base['storage'] = {'days_remaining': 0.5, 'free_gb': 5, 'used_pct': 99}
+        base['storage']['days_remaining'] = 1.5
+        base['storage']['free_gb']        = 100
     elif c == 'ssd_warning':
-        # falls back to used_pct path (>= 90) when days_remaining is None
-        base['storage'] = {'days_remaining': None, 'free_gb': 40, 'used_pct': 92}
+        base['storage']['days_remaining'] = 5.0
+        base['storage']['free_gb']        = 600
+    elif c == 'ssd_high':
+        base['storage']['used_pct']       = 95
+        base['storage']['free_gb']        = 200
+        base['storage']['days_remaining'] = None
     elif c == 'temp_high':
-        base['cpu_temp_c'] = 85
+        base['cpu_temp_c'] = 85   # above 80°C production threshold
     elif c == 'cam_unreachable':
         base['cam_reachable'] = False
-    elif c == 'ble_down':
-        # BLE removed; mapped to YOLO-down (same alert path)
+    elif c == 'yolo_down':
         base['yolo_running'] = False
     return base
 
