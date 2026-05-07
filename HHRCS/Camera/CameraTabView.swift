@@ -57,7 +57,7 @@ struct CameraTabView: View {
             Theme.background.ignoresSafeArea()
 
             TabView(selection: $currentPage) {
-                StillImagePage(poller: hdmiPoller)
+                StillImagePage(poller: hdmiPoller, recordingState: vm.recordingState)
                 .padding(.top, 32)
                 .padding(.bottom, isLandscape ? 0 : 54)
                 .tag(CameraPage.still)
@@ -80,7 +80,7 @@ struct CameraTabView: View {
                 case .still:
                     OperatorControlRow(
                         isOwner: settings.ownerModeEnabled,
-                        isRecording: vm.isRecording,
+                        recordingState: vm.recordingState,
                         captureIsPlaceholder: false,
                         onRecord: { Task { await vm.toggleBmpccRecord() } },
                         onCapture: { Task { await vm.captureHdmiStill() } }
@@ -88,7 +88,7 @@ struct CameraTabView: View {
                 case .live:
                     OperatorControlRow(
                         isOwner: settings.ownerModeEnabled,
-                        isRecording: vm.isPiCamRecording,
+                        recordingState: vm.isPiCamRecording ? .recording : .idle,
                         captureIsPlaceholder: false,
                         recordDisabled: true,
                         onRecord: { vm.togglePiCamRecord() },
@@ -360,7 +360,8 @@ struct CameraTabView: View {
 
 private struct StillImagePage: View {
     @ObservedObject var poller: StillPoller
-    @State private var showFullscreen = false
+    var recordingState: RecordingState = .idle  // BMPCC page only; CAM page leaves default
+    @State private var showFullscreen  = false
 
     var body: some View {
         ZStack {
@@ -381,6 +382,28 @@ private struct StillImagePage: View {
                         .tracking(Theme.labelTracking)
                         .foregroundStyle(Theme.tertiary)
                 }
+            }
+
+            // FINALIZING overlay — centered, matches control row indicator
+            if recordingState == .finalizing {
+                VStack {
+                    Spacer()
+                    Text("FINALIZING CLIP")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .tracking(1.5)
+                        .foregroundStyle(Theme.accentColor.opacity(0.8))
+                        .padding(.bottom, 8)
+                }
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if poller.isManual {
+                Text("MANUAL")
+                    .font(.system(size: 8, weight: .regular, design: .monospaced))
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.tertiary)
+                    .padding(.leading, 12)
+                    .padding(.top, 6)
             }
         }
         .overlay(alignment: .topTrailing) {
@@ -423,14 +446,15 @@ private struct StillImagePage: View {
 
 private struct OperatorControlRow<Indicator: View>: View {
     let isOwner: Bool
-    let isRecording: Bool
+    var recordingState: RecordingState = .idle
     let captureIsPlaceholder: Bool
     var recordDisabled: Bool = false
     let onRecord: () -> Void
     let onCapture: () -> Void
     @ViewBuilder let indicator: () -> Indicator
 
-    @State private var captureFlash = false
+    @State private var captureFlash  = false
+    @State private var breatheOpacity: Double = 1.0
 
     var body: some View {
         ZStack {
@@ -450,15 +474,7 @@ private struct OperatorControlRow<Indicator: View>: View {
                             }
                             .allowsHitTesting(false)
                         } else {
-                            Button {
-                                onRecord()
-                            } label: {
-                                Image(systemName: isRecording ? "stop.circle.fill" : "record.circle")
-                                    .symbolRenderingMode(.monochrome)
-                                    .font(.system(size: 26))
-                                    .foregroundStyle(isRecording ? Theme.recordingRed : Theme.tertiary)
-                            }
-                            .buttonStyle(.plain)
+                            recordButton
                         }
                     } else {
                         Color.clear
@@ -502,6 +518,46 @@ private struct OperatorControlRow<Indicator: View>: View {
         .frame(height: 44)
         .padding(.bottom, 10)
         .background(Theme.background)
+    }
+
+    @ViewBuilder
+    private var recordButton: some View {
+        switch recordingState {
+        case .recording:
+            Button(action: onRecord) {
+                Image(systemName: "stop.circle.fill")
+                    .symbolRenderingMode(.monochrome)
+                    .font(.system(size: 26))
+                    .foregroundStyle(Theme.recordingRed)
+            }
+            .buttonStyle(.plain)
+        case .finalizing:
+            HStack(spacing: 5) {
+                Image(systemName: "record.circle")
+                    .font(.system(size: 22))
+                    .foregroundStyle(Theme.accentColor)
+                Text("FINALIZING")
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .tracking(1.0)
+                    .foregroundStyle(Theme.accentColor)
+            }
+            .opacity(breatheOpacity)
+            .allowsHitTesting(false)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                    breatheOpacity = 0.4
+                }
+            }
+            .onDisappear { breatheOpacity = 1.0 }
+        case .idle:
+            Button(action: onRecord) {
+                Image(systemName: "record.circle")
+                    .symbolRenderingMode(.monochrome)
+                    .font(.system(size: 26))
+                    .foregroundStyle(Theme.tertiary)
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
 

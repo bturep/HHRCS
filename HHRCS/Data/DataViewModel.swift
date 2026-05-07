@@ -2,6 +2,13 @@ import Foundation
 import Combine
 import SwiftUI
 
+// Tri-state BMPCC recording state — idle / actively recording / BMPCC finalizing clip to SSD
+enum RecordingState: Equatable {
+    case idle
+    case recording
+    case finalizing  // ~10s clip flush after stop; resolves to idle once Pi confirms
+}
+
 struct StorageSnapshot: Decodable, Identifiable {
     var id: String { date }
     let date:      String
@@ -34,8 +41,9 @@ final class DataViewModel: ObservableObject {
     @Published var iso: Int    = 400
 
     // MARK: – Camera
-    @Published var isRecording:      Bool   = false  // BMPCC via ESP32
-    @Published var isPiCamRecording: Bool   = false  // Pi Camera Module 3
+    @Published var isRecording:      Bool            = false
+    @Published var recordingState:   RecordingState  = .idle
+    @Published var isPiCamRecording: Bool            = false
     @Published var recordingSeconds: Int    = 7243
     @Published var ssdRemainingGB:   Double = 312.4
     @Published var ssdTotalGB:       Double = 480.0
@@ -143,11 +151,12 @@ final class DataViewModel: ObservableObject {
     }
 
     // MARK: – Private
-    private var simTask:          Task<Void, Never>?
-    private var trigTask:         Task<Void, Never>?
-    private var healthTask:       Task<Void, Never>?
-    private var logTask:          Task<Void, Never>?
-    private var notificationTask: Task<Void, Never>?
+    private var simTask:           Task<Void, Never>?
+    private var trigTask:          Task<Void, Never>?
+    private var healthTask:        Task<Void, Never>?
+    private var logTask:           Task<Void, Never>?
+    private var notificationTask:  Task<Void, Never>?
+    private var finalizingTimer:   Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
 
     private let detectionClasses = ["deer", "fox", "raccoon", "coyote",
@@ -192,6 +201,7 @@ final class DataViewModel: ObservableObject {
         healthTask?.cancel()
         logTask?.cancel()
         notificationTask?.cancel()
+        finalizingTimer?.cancel()
     }
 
     func suspend() {
@@ -379,8 +389,22 @@ final class DataViewModel: ObservableObject {
                 storageSnapshots        = s.snapshots ?? []
             }
 
-            // isRecording is driven purely by the camera's authoritative state
-            isRecording = camRecording
+            // Tri-state recording state resolution
+            switch recordingState {
+            case .finalizing:
+                let piStopped = !(poll.camRecording ?? false)
+                let machineIdle = (poll.machineState ?? "IDLE") == "IDLE"
+                if piStopped && machineIdle {
+                    recordingState = .idle
+                    finalizingTimer?.cancel()
+                    finalizingTimer = nil
+                }
+            case .idle:
+                if poll.camRecording ?? false { recordingState = .recording }
+            case .recording:
+                break
+            }
+            isRecording = (recordingState == .recording)
 
             // Machine state & YOLO lock
             let ms = poll.machineState ?? "IDLE"
@@ -622,11 +646,24 @@ final class DataViewModel: ObservableObject {
 
     // BMPCC record via Pi → ethernet → camera REST API
     func toggleBmpccRecord() async {
-        if isRecording {
+        switch recordingState {
+        case .recording:
             await sendPiCommandPUT("/camera/record/stop")
-        } else {
+            recordingState = .finalizing
+            finalizingTimer?.cancel()
+            finalizingTimer = Task {
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                if recordingState == .finalizing {
+                    recordingState = .idle
+                    print("[HHRCS] FINALIZING safety timer expired — forced idle")
+                }
+            }
+        case .idle:
             await sendPiCommandPUT("/camera/record/start")
+            recordingState = .recording
             await captureAndStoreSnapshot(triggerType: "manual")
+        case .finalizing:
+            break  // non-interactive during finalization
         }
         await pollHealth()
     }

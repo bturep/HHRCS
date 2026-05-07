@@ -41,15 +41,22 @@ struct SettingsTabView: View {
     @State private var confirmOwnerPW     = ""
     @State private var ownerPWChangeMsg   = ""
 
+    @State private var showRefreshInterval = false
+    @State private var showChecklist       = false
+    @State private var showResetConfirm    = false
+    @AppStorage("stillRefreshInterval") private var stillRefreshInterval: Int = 5
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 diagnosticCard
                 logCard
+                refreshIntervalCard
                 deploymentCard
                 accessCard
                 systemCard
                 agentCard
+                deploymentChecklistCard
                 notificationsCard
                 versionRow
             }
@@ -63,6 +70,80 @@ struct SettingsTabView: View {
             lngText = String(format: "%.6f", settings.longitude)
             Task { await pollDeploymentStatus() }
         }
+    }
+
+    // MARK: – Refresh interval card
+
+    private static let refreshOptions: [(label: String, value: Int)] = [
+        ("2 SECONDS", 2), ("5 SECONDS", 5), ("10 SECONDS", 10),
+        ("30 SECONDS", 30), ("1 MINUTE", 60), ("5 MINUTES", 300), ("MANUAL ONLY", -1),
+    ]
+
+    private var refreshIntervalCard: some View {
+        let current = stillRefreshInterval == 0 ? 5 : stillRefreshInterval
+        let currentLabel = Self.refreshOptions.first { $0.value == current }?.label ?? "5 SECONDS"
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { showRefreshInterval.toggle() }
+            } label: {
+                HStack {
+                    Text("REFRESH INTERVAL")
+                        .font(Theme.dataLabel(size: 9))
+                        .tracking(Theme.headerTracking)
+                        .foregroundStyle(Theme.cardLabel)
+                    Spacer()
+                    Text(currentLabel)
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.secondary)
+                    Image(systemName: showRefreshInterval ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.tertiary)
+                        .padding(.leading, 6)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if showRefreshInterval {
+                HRule().padding(.top, 10)
+                VStack(spacing: 0) {
+                    ForEach(Self.refreshOptions, id: \.value) { opt in
+                        Button {
+                            stillRefreshInterval = opt.value
+                            NotificationCenter.default.post(name: .stillRefreshIntervalChanged, object: nil)
+                        } label: {
+                            HStack {
+                                Text(opt.label)
+                                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                                    .foregroundStyle(current == opt.value ? Theme.accentColor : Theme.secondary)
+                                Spacer()
+                                if current == opt.value {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(Theme.accentColor)
+                                }
+                            }
+                            .padding(.vertical, 10)
+                        }
+                        .buttonStyle(.plain)
+                        if opt.value != -1 {
+                            HRule()
+                        }
+                    }
+                }
+                .padding(.top, 2)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.cardBackground)
+        .cornerRadius(Theme.cardRadius)
+        .animation(.easeInOut(duration: 0.2), value: showRefreshInterval)
+    }
+
+    // MARK: – Deployment checklist card
+
+    private var deploymentChecklistCard: some View {
+        DeploymentChecklistCard(isExpanded: $showChecklist, showResetConfirm: $showResetConfirm)
     }
 
     // MARK: – Version row
@@ -1004,6 +1085,221 @@ private struct OwnerUnlockSheet: View {
             withAnimation(spring) { pinShake = -8 }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
                 withAnimation(spring) { pinShake = 0 }
+            }
+        }
+    }
+}
+
+// MARK: – Deployment checklist
+
+private struct DeploymentChecklistCard: View {
+    @EnvironmentObject var vm: DataViewModel
+    @Binding var isExpanded:    Bool
+    @Binding var showResetConfirm: Bool
+
+    private struct CheckItem {
+        let id:        String
+        let label:     String
+        var autoCheck: ((DataViewModel) -> Bool)? = nil
+    }
+
+    private let bmpccItems: [CheckItem] = [
+        CheckItem(id: "status_text",   label: "Status Text → ON"),
+        CheckItem(id: "lut",           label: "Display 3D LUT → preference"),
+        CheckItem(id: "bt_off",        label: "Bluetooth Control → OFF"),
+        CheckItem(id: "codec",         label: "Codec set (ProRes / BRAW)"),
+        CheckItem(id: "resolution",    label: "Resolution set"),
+        CheckItem(id: "frame_rate",    label: "Frame rate set"),
+        CheckItem(id: "iso_wb",        label: "ISO and white balance dialed"),
+    ]
+
+    private let physicalItems: [CheckItem] = [
+        CheckItem(id: "battery",       label: "BMPCC battery installed and charged"),
+        CheckItem(id: "ssd",           label: "SSD installed and tested"),
+        CheckItem(id: "lens",          label: "Lens mounted and focused"),
+        CheckItem(id: "mount",         label: "Camera mounted and angle set"),
+        CheckItem(id: "pi_enclosure",  label: "Pi enclosure secured"),
+        CheckItem(id: "pi_power",      label: "Pi power connected (USB-C)"),
+        CheckItem(id: "ethernet",      label: "Ethernet between Pi and BMPCC"),
+        CheckItem(id: "hdmi",          label: "HDMI between BMPCC and Pi capture card"),
+    ]
+
+    private let healthItems: [CheckItem] = [
+        CheckItem(id: "pi_green",      label: "Pi reachable (PI dot green)",        autoCheck: { $0.healthPiReachable }),
+        CheckItem(id: "cam_green",     label: "Camera reachable (CAM dot green)",   autoCheck: { $0.camReachable }),
+        CheckItem(id: "hdmi_green",    label: "HDMI reachable (HDMI dot green)",    autoCheck: { $0.hdmiReachable }),
+        CheckItem(id: "yolo_green",    label: "YOLO running (YOLO dot green)",      autoCheck: { $0.healthYoloRunning }),
+        CheckItem(id: "ssd_days",      label: "SSD has >2 days remaining",          autoCheck: { ($0.storageDaysRemaining ?? 0) > 2 }),
+        CheckItem(id: "test_rec",      label: "Test recording: 5s clip, confirm file on SSD"),
+        CheckItem(id: "ntfy",          label: "ntfy push received on phone"),
+        CheckItem(id: "sim_mode",      label: "Sim mode toggle set as intended"),
+    ]
+
+    private func key(_ section: String, _ id: String) -> String { "deploy_check_\(section)_\(id)" }
+
+    private func checked(_ section: String, _ id: String) -> Bool {
+        UserDefaults.standard.bool(forKey: key(section, id))
+    }
+
+    private func toggle(_ section: String, _ id: String) {
+        let k = key(section, id)
+        UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: k), forKey: k)
+    }
+
+    private func resetAll() {
+        for item in bmpccItems    { UserDefaults.standard.removeObject(forKey: key("bmpcc",    item.id)) }
+        for item in physicalItems { UserDefaults.standard.removeObject(forKey: key("physical", item.id)) }
+        for item in healthItems   { UserDefaults.standard.removeObject(forKey: key("health",   item.id)) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+            } label: {
+                HStack {
+                    Text("DEPLOYMENT CHECKLIST")
+                        .font(Theme.dataLabel(size: 9))
+                        .tracking(Theme.headerTracking)
+                        .foregroundStyle(Theme.cardLabel)
+                    Spacer()
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                HRule().padding(.top, 10)
+                checkSection(title: "BMPCC MENU",   section: "bmpcc",    items: bmpccItems)
+                HRule()
+                checkSection(title: "PHYSICAL",     section: "physical", items: physicalItems)
+                HRule()
+                checkSection(title: "SYSTEM HEALTH",section: "health",   items: healthItems)
+                HRule().padding(.top, 4)
+                Button {
+                    showResetConfirm = true
+                } label: {
+                    Text("RESET CHECKLIST")
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.dotRed)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.plain)
+                .sheet(isPresented: $showResetConfirm) {
+                    ChecklistResetSheet(isPresented: $showResetConfirm, onConfirm: resetAll)
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.cardBackground)
+        .cornerRadius(Theme.cardRadius)
+        .animation(.easeInOut(duration: 0.2), value: isExpanded)
+    }
+
+    @ViewBuilder
+    private func checkSection(title: String, section: String, items: [CheckItem]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.system(size: 8, weight: .regular, design: .monospaced))
+                .tracking(1.8)
+                .foregroundStyle(Theme.tertiary)
+                .padding(.vertical, 8)
+            ForEach(items, id: \.id) { item in
+                checkRow(item: item, section: section)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func checkRow(item: CheckItem, section: String) -> some View {
+        let isChecked = checked(section, item.id)
+        let isAutoOK  = item.autoCheck?(vm) == true
+        Button {
+            toggle(section, item.id)
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                ZStack {
+                    if isChecked {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Theme.accentColor)
+                            .frame(width: 14, height: 14)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Theme.background)
+                    } else {
+                        RoundedRectangle(cornerRadius: 2)
+                            .stroke(isAutoOK ? Theme.accentColor : Theme.tertiary, lineWidth: 1)
+                            .frame(width: 14, height: 14)
+                        if isAutoOK {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Theme.accentColor.opacity(0.15))
+                                .frame(width: 14, height: 14)
+                        }
+                    }
+                }
+                .padding(.top, 1)
+                Text(item.label)
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(isChecked ? Theme.secondary : Theme.fg)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+            }
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: – Checklist reset confirmation sheet
+
+private struct ChecklistResetSheet: View {
+    @Binding var isPresented: Bool
+    let onConfirm: () -> Void
+
+    var body: some View {
+        ZStack {
+            Theme.background.ignoresSafeArea()
+            VStack(spacing: 0) {
+                Spacer()
+                VStack(spacing: 20) {
+                    VStack(spacing: 6) {
+                        Text("RESET ALL CHECKBOXES?")
+                            .font(.system(size: 13, weight: .regular, design: .monospaced))
+                            .tracking(1.0)
+                            .foregroundStyle(.white)
+                        Text("This cannot be undone.")
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundStyle(Theme.secondary)
+                    }
+                    HStack(spacing: 16) {
+                        Button("CANCEL") { isPresented = false }
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundStyle(Theme.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.rule, lineWidth: 1))
+                            .buttonStyle(.plain)
+                        Button("RESET") {
+                            onConfirm()
+                            isPresented = false
+                        }
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.dotRed)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.dotRed, lineWidth: 1))
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(32)
+                .background(Theme.cardBackground)
+                .cornerRadius(Theme.cardRadius)
+                .padding(.horizontal, 24)
+                Spacer()
             }
         }
     }

@@ -48,10 +48,24 @@ struct DataTabView: View {
                 .frame(maxWidth: .infinity)
 
                 HStack(alignment: .top, spacing: 0) {
+                    let recLabel: String = {
+                        switch vm.recordingState {
+                        case .recording:  return "YES"
+                        case .finalizing: return "FINALIZING"
+                        case .idle:       return "NO"
+                        }
+                    }()
+                    let recColor: Color = {
+                        switch vm.recordingState {
+                        case .recording:  return Theme.dotRed
+                        case .finalizing: return Theme.accentColor
+                        case .idle:       return .white
+                        }
+                    }()
                     MetricCell(
-                        value:      vm.camRecording ? "YES" : "NO",
+                        value:      recLabel,
                         label:      "RECORDING",
-                        valueColor: vm.camRecording ? Theme.dotRed : .white
+                        valueColor: recColor
                     )
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     MetricCell(value: vm.camActiveMediaSlot, label: "MEDIA SLOT")
