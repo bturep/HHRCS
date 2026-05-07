@@ -432,37 +432,43 @@ final class FalseColorPoller: ObservableObject {
 // MARK: – False color IRE scale bar
 
 // Smooth gradient bar matching the BMPCC false color LUT anchors.
-// ARRI/BMPCC band-based scalebar — narrow color bands at reference IRE points,
-// greyscale between. Matches Pi LUT. Shown below image when displayMode is .falseColor.
+// ARRI/BMPCC band-based scalebar. Gradient stops use empirically-shifted IRE thresholds
+// matching our 8-bit HDMI feed. Labels stay at BMPCC conceptual reference positions
+// (0–100 scale) so the operator sees the exposure intent, not pixel values.
 private struct FalseColorScalebar: View {
-    // Hard-edge band transitions via paired stops at identical positions (BGR→RGB applied).
+    // Hard-edge band transitions via paired stops. Gradient positions use the
+    // empirically-shifted IRE values that match our 8-bit HDMI feed; labels
+    // (in the Canvas below) stay at BMPCC's conceptual reference positions.
     private static let gradientStops: [Gradient.Stop] = [
-        // Purple band 0–2.5%
+        // Purple band 0–5.5% (BDL)
         .init(color: Color(red: 100/255, green:   0,       blue: 130/255), location: 0.000),
-        .init(color: Color(red: 100/255, green:   0,       blue: 130/255), location: 0.025),
-        // Blue band 2.5–4%
-        .init(color: Color(red:   0,     green: 100/255,   blue:   1),     location: 0.025),
-        .init(color: Color(red:   0,     green: 100/255,   blue:   1),     location: 0.040),
-        // Grey zone 4–38% (luminance-preserving gradient)
-        .init(color: Color(white:  4/255),                                  location: 0.040),
-        .init(color: Color(white: 97/255),                                  location: 0.380),
-        // Green band 38–42%
-        .init(color: Color(red:   0,     green: 220/255,   blue:   0),     location: 0.380),
-        .init(color: Color(red:   0,     green: 220/255,   blue:   0),     location: 0.420),
-        // Grey zone 42–52%
-        .init(color: Color(white: 107/255),                                 location: 0.420),
-        .init(color: Color(white: 133/255),                                 location: 0.520),
-        // Pink band 52–56%
-        .init(color: Color(red: 240/255, green: 100/255,   blue: 200/255), location: 0.520),
-        .init(color: Color(red: 240/255, green: 100/255,   blue: 200/255), location: 0.560),
-        // Grey zone 56–97%
-        .init(color: Color(white: 143/255),                                 location: 0.560),
-        .init(color: Color(white: 247/255),                                 location: 0.970),
-        // Yellow band 97–99%
-        .init(color: Color(red: 240/255, green: 220/255,   blue:   0),     location: 0.970),
-        .init(color: Color(red: 240/255, green: 220/255,   blue:   0),     location: 0.990),
-        // Red band 99–100%
-        .init(color: .red,                                                   location: 0.990),
+        .init(color: Color(red: 100/255, green:   0,       blue: 130/255), location: 0.055),
+        // Blue band 5.5–10% (NBDL)
+        .init(color: Color(red:   0,     green: 100/255,   blue:   1),     location: 0.055),
+        .init(color: Color(red:   0,     green: 100/255,   blue:   1),     location: 0.100),
+        // Grey zone 10–58%
+        .init(color: Color(white: 0x1A/255),                                location: 0.100),
+        .init(color: Color(white: 0x94/255),                                location: 0.580),
+        // Green band 58–62% (18%MG)
+        .init(color: Color(red:   0,     green: 220/255,   blue:   0),     location: 0.580),
+        .init(color: Color(red:   0,     green: 220/255,   blue:   0),     location: 0.620),
+        // Grey zone 62–73%
+        .init(color: Color(white: 0x9E/255),                                location: 0.620),
+        .init(color: Color(white: 0xBA/255),                                location: 0.730),
+        // Pink band 73–77% (MG+1)
+        .init(color: Color(red: 240/255, green: 100/255,   blue: 200/255), location: 0.730),
+        .init(color: Color(red: 240/255, green: 100/255,   blue: 200/255), location: 0.770),
+        // Grey zone 77–88%
+        .init(color: Color(white: 0xC4/255),                                location: 0.770),
+        .init(color: Color(white: 0xE0/255),                                location: 0.880),
+        // Yellow band 88–93% (80%WC)
+        .init(color: Color(red: 240/255, green: 220/255,   blue:   0),     location: 0.880),
+        .init(color: Color(red: 240/255, green: 220/255,   blue:   0),     location: 0.930),
+        // Grey gap 93–95%
+        .init(color: Color(white: 0xED/255),                                location: 0.930),
+        .init(color: Color(white: 0xF2/255),                                location: 0.950),
+        // Red band 95–100% (95%WC / clip)
+        .init(color: .red,                                                   location: 0.950),
         .init(color: .red,                                                   location: 1.000),
     ]
 
@@ -489,13 +495,14 @@ private struct FalseColorScalebar: View {
             .foregroundStyle(Theme.tertiary)
             // Reference band legend — positioned at approximate IRE fractions
             Canvas { ctx, size in
+                // Labels at BMPCC conceptual reference positions (not shifted pixel values).
                 let items: [(String, CGFloat, UnitPoint)] = [
-                    ("BDL",   0.013, UnitPoint(x: 0,   y: 0.5)),  // purple 0–2.5%
-                    ("NBDL",  0.033, UnitPoint(x: 0,   y: 0.5)),  // blue 2.5–4%
-                    ("18%MG", 0.400, UnitPoint(x: 0.5, y: 0.5)),  // green 38–42%
-                    ("MG+1",  0.540, UnitPoint(x: 0.5, y: 0.5)),  // pink 52–56%
-                    ("80%WC", 0.975, UnitPoint(x: 1,   y: 0.5)),  // yellow 97–99%
-                    ("95%WC", 0.997, UnitPoint(x: 1,   y: 0.5)),  // red 99–100%
+                    ("BDL",   0.000, UnitPoint(x: 0,   y: 0.5)),
+                    ("NBDL",  0.040, UnitPoint(x: 0,   y: 0.5)),
+                    ("18%MG", 0.400, UnitPoint(x: 0.5, y: 0.5)),
+                    ("MG+1",  0.550, UnitPoint(x: 0.5, y: 0.5)),
+                    ("80%WC", 0.800, UnitPoint(x: 0.5, y: 0.5)),
+                    ("95%WC", 0.990, UnitPoint(x: 1,   y: 0.5)),
                 ]
                 for (label, frac, anchor) in items {
                     let resolved = ctx.resolve(

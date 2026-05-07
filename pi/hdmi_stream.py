@@ -11,21 +11,21 @@ log = logging.getLogger(__name__)
 
 
 # ARRI/BMPCC false color LUT — narrow reference bands with luminance-preserving
-# grayscale between them. Most of the image stays grey, revealing texture and
-# detail; only reference exposure zones receive color.
+# grayscale between them. Band IRE thresholds are empirically shifted to account
+# for 8-bit Rec.709 HDMI vs 12-bit log sensor redistribution: the same scene
+# content sits at higher pixel values in our 8-bit feed than in BMPCC's internal
+# 12-bit log signal. Labels describe exposure intent (BMPCC reference scale),
+# not the numeric pixel values used here.
 #
-# IRE bands (BGR for OpenCV):
-#   0.0–2.5   Purple (130,0,100)  — black detail loss
-#   2.5–4.0   Blue   (255,100,0)  — near-black detail loss
-#   38.0–42.0 Green  (0,220,0)    — 18% middle grey reference
-#   52.0–56.0 Pink   (200,100,240)— skin tone (1 stop over middle grey)
-#   97.0–99.0 Yellow (0,220,240)  — near-white clipping warning
-#   99.0–100  Red    (0,0,255)    — white clipping
-#
-# Yellow/Red thresholds at 97/99 IRE (not 80/95) account for 8-bit HDMI
-# signal compression vs 12-bit sensor log — highlights read slightly hot.
+# Empirically calibrated IRE bands (BGR for OpenCV):
+#   0–5.5     Purple (130,0,100)  — BDL: black detail loss   (sensor ~0–2.5)
+#   5.5–10    Blue   (255,100,0)  — NBDL: near-black          (sensor ~2.5–4)
+#   58–62     Green  (0,220,0)    — 18%MG: middle grey         (sensor ~38–42)
+#   73–77     Pink   (200,100,240)— MG+1: skin tone            (sensor ~52–56)
+#   88–93     Yellow (0,220,240)  — 80%WC: near-white warning  (sensor ~78–95)
+#   95+       Red    (0,0,255)    — 95%WC: clipping            (sensor ~99–100)
 def _build_false_color_lut() -> np.ndarray:
-    """ARRI/BMPCC-style false color: narrow color bands, grayscale between. Never raises."""
+    """ARRI/BMPCC-style false color, IRE-shifted for 8-bit HDMI log. Never raises."""
     PURPLE = (130,   0, 100)
     BLUE   = (255, 100,   0)
     GREEN  = (  0, 220,   0)
@@ -36,17 +36,17 @@ def _build_false_color_lut() -> np.ndarray:
     lut = np.zeros((256, 1, 3), dtype=np.uint8)
     for v in range(256):
         ire = (v / 255.0) * 100.0
-        if ire < 2.5:
+        if ire < 5.5:
             bgr = PURPLE
-        elif ire < 4.0:
+        elif ire < 10.0:
             bgr = BLUE
-        elif 38.0 <= ire <= 42.0:
+        elif 58.0 <= ire <= 62.0:
             bgr = GREEN
-        elif 52.0 <= ire <= 56.0:
+        elif 73.0 <= ire <= 77.0:
             bgr = PINK
-        elif 97.0 <= ire < 99.0:
+        elif 88.0 <= ire <= 93.0:
             bgr = YELLOW
-        elif ire >= 99.0:
+        elif ire >= 95.0:
             bgr = RED
         else:
             bgr = (v, v, v)
