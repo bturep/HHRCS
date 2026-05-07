@@ -43,11 +43,6 @@ struct StillsGalleryView: View {
                 .font(Theme.dataLabel())
                 .tracking(Theme.labelTracking)
                 .foregroundStyle(Theme.tertiary)
-            Text("tap the camera button in the FEED tab to capture")
-                .font(Theme.statusCaption())
-                .foregroundStyle(Theme.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
             Spacer()
         }
     }
@@ -60,40 +55,44 @@ private struct StillCell: View {
     let timeFormatter: DateFormatter
     let onDelete: () -> Void
 
-    @State private var showDeleteAlert = false
+    @State private var showDeleteSheet = false
     @State private var showFullscreen  = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            thumbnailView
-                .aspectRatio(16 / 9, contentMode: .fit)
-                .clipped()
-                .cornerRadius(4)
-                .onTapGesture { showFullscreen = true }
-                .onLongPressGesture { showDeleteAlert = true }
+            VStack(spacing: 4) {
+                thumbnailView
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .clipped()
+                    .cornerRadius(4)
+                    .onTapGesture { showFullscreen = true }
+                    .onLongPressGesture(minimumDuration: 0.4) {
+                        #if os(iOS)
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        #endif
+                        showDeleteSheet = true
+                    }
 
-            HStack(spacing: 4) {
-                Text(timeFormatter.string(from: still.timestamp))
-                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                Text(still.sourceLabel)
+                    .font(.system(size: 9, weight: .regular, design: .monospaced))
                     .foregroundStyle(Theme.tertiary)
-                    .lineLimit(1)
-
-                if still.bmpccFilename != nil {
-                    Text("BMPCC")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(Theme.accent)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(Theme.accent.opacity(0.12))
-                        .cornerRadius(2)
-                }
-                Spacer()
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
+
+            Text(timeFormatter.string(from: still.timestamp))
+                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                .foregroundStyle(Theme.tertiary)
+                .lineLimit(1)
         }
         #if os(iOS)
         .fullScreenCover(isPresented: $showFullscreen) {
             if let data = still.piCamImageData, let img = PlatformImage(data: data) {
-                FullscreenImageView(image: img, isPresented: $showFullscreen)
+                FullscreenImageView(
+                    image: img,
+                    isPresented: $showFullscreen,
+                    sourceLabel: still.sourceLabel,
+                    onDelete: { showFullscreen = false; onDelete() }
+                )
             } else {
                 placeholderFullscreen
             }
@@ -101,15 +100,19 @@ private struct StillCell: View {
         #else
         .sheet(isPresented: $showFullscreen) {
             if let data = still.piCamImageData, let img = PlatformImage(data: data) {
-                FullscreenImageView(image: img, isPresented: $showFullscreen)
+                FullscreenImageView(
+                    image: img,
+                    isPresented: $showFullscreen,
+                    sourceLabel: still.sourceLabel,
+                    onDelete: { showFullscreen = false; onDelete() }
+                )
             } else {
                 placeholderFullscreen
             }
         }
         #endif
-        .alert("Delete this still?", isPresented: $showDeleteAlert) {
-            Button("DELETE", role: .destructive) { onDelete() }
-            Button("CANCEL", role: .cancel) { }
+        .sheet(isPresented: $showDeleteSheet) {
+            DeleteConfirmSheet(isPresented: $showDeleteSheet, onDelete: onDelete)
         }
     }
 
@@ -135,5 +138,63 @@ private struct StillCell: View {
                 }
                 .buttonStyle(.plain)
             }
+    }
+}
+
+// MARK: – Delete confirm sheet
+
+struct DeleteConfirmSheet: View {
+    @Binding var isPresented: Bool
+    let onDelete: () -> Void
+
+    var body: some View {
+        ZStack {
+            Theme.background.ignoresSafeArea()
+            VStack(spacing: 0) {
+                Spacer()
+                VStack(spacing: 20) {
+                    VStack(spacing: 8) {
+                        Text("DELETE STILL?")
+                            .font(.system(size: 13, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .tracking(Theme.labelTracking)
+                        Text("This cannot be undone.")
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundStyle(Theme.tertiary)
+                    }
+                    HStack(spacing: 0) {
+                        Button {
+                            isPresented = false
+                        } label: {
+                            Text("CANCEL")
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .tracking(Theme.labelTracking)
+                                .foregroundStyle(Theme.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            isPresented = false
+                            onDelete()
+                        } label: {
+                            Text("DELETE")
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .tracking(Theme.labelTracking)
+                                .foregroundStyle(Theme.recordingRed)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(24)
+                .background(Theme.cardBackground)
+                .cornerRadius(Theme.cardRadius)
+                .padding(.horizontal, 32)
+                Spacer()
+                Spacer()
+            }
+        }
     }
 }

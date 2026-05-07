@@ -59,11 +59,15 @@ struct NotesTabView: View {
 
             HRule().padding(.horizontal, Theme.pagePadding)
 
-            switch segment {
-            case .log:    logContent
-            case .agent:  agentContent
-            case .stills: StillsGalleryView()
+            TabView(selection: $segment) {
+                StillsGalleryView()
+                    .tag(FieldSegment.stills)
+                agentContent
+                    .tag(FieldSegment.agent)
+                logContent
+                    .tag(FieldSegment.log)
             }
+            .tabViewStyle(.page(indexDisplayMode: .never))
         }
         .background(Theme.background)
     }

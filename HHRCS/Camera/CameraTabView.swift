@@ -376,7 +376,7 @@ private struct StillImagePage: View {
                     Image(systemName: "photo")
                         .font(.system(size: 32, weight: .thin))
                         .foregroundStyle(Theme.tertiary)
-                    Text("POLLING")
+                    Text("CONNECTING")
                         .font(Theme.dataLabel())
                         .tracking(Theme.labelTracking)
                         .foregroundStyle(Theme.tertiary)

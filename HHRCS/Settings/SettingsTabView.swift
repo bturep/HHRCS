@@ -45,6 +45,7 @@ struct SettingsTabView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 diagnosticCard
+                logCard
                 deploymentCard
                 accessCard
                 systemCard
@@ -95,28 +96,39 @@ struct SettingsTabView: View {
                 if let dot = activeDot {
                     HRule()
                     dotDetailPanel(dot)
-                } else if showLog {
-                    HRule()
-                    logPanelView
                 }
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: activeDot)
+    }
 
-                Button {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        showLog.toggle()
-                        if showLog { activeDot = nil }
-                    }
-                } label: {
+    private var logCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { showLog.toggle() }
+            } label: {
+                HStack {
+                    Text("LOG")
+                        .font(Theme.dataLabel(size: 9))
+                        .tracking(Theme.headerTracking)
+                        .foregroundStyle(Theme.cardLabel)
+                    Spacer()
                     Image(systemName: showLog ? "chevron.up" : "chevron.down")
                         .font(.system(size: 10, weight: .regular, design: .monospaced))
                         .foregroundStyle(Theme.tertiary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
                 }
-                .buttonStyle(.plain)
+            }
+            .buttonStyle(.plain)
+
+            if showLog {
+                logPanelView
             }
         }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.cardBackground)
+        .cornerRadius(Theme.cardRadius)
         .animation(.easeInOut(duration: 0.2), value: showLog)
-        .animation(.easeInOut(duration: 0.2), value: activeDot)
     }
 
     @ViewBuilder

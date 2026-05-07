@@ -88,11 +88,14 @@ struct StillFrameView: View {
 struct FullscreenImageView: View {
     let image:       PlatformImage
     @Binding var isPresented: Bool
+    var sourceLabel: String?       = nil
+    var onDelete:    (() -> Void)? = nil
 
-    @State private var scale:      CGFloat = 1.0
-    @State private var lastScale:  CGFloat = 1.0
-    @State private var offset:     CGSize  = .zero
-    @State private var lastOffset: CGSize  = .zero
+    @State private var scale:            CGFloat = 1.0
+    @State private var lastScale:        CGFloat = 1.0
+    @State private var offset:           CGSize  = .zero
+    @State private var lastOffset:       CGSize  = .zero
+    @State private var showDeleteSheet:  Bool    = false
 
     var body: some View {
         // ZStack does NOT have ignoresSafeArea — controls layer respects safe area automatically.
@@ -135,6 +138,16 @@ struct FullscreenImageView: View {
                             }
                             .onEnded { _ in lastOffset = offset }
                     )
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 0.4)
+                            .onEnded { _ in
+                                guard onDelete != nil else { return }
+                                #if os(iOS)
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                #endif
+                                showDeleteSheet = true
+                            }
+                    )
             }
             .ignoresSafeArea()
 
@@ -142,6 +155,12 @@ struct FullscreenImageView: View {
             // starts below the Dynamic Island — no manual inset calculation needed.
             VStack {
                 HStack {
+                    if let label = sourceLabel {
+                        Text(label)
+                            .font(.system(size: 9, weight: .regular, design: .monospaced))
+                            .foregroundStyle(Theme.tertiary)
+                            .padding(.leading, 16)
+                    }
                     Spacer()
                     Button { isPresented = false } label: {
                         Image(systemName: "xmark")
@@ -155,6 +174,12 @@ struct FullscreenImageView: View {
                 }
                 .padding(.top, 8)
                 Spacer()
+            }
+        }
+        .sheet(isPresented: $showDeleteSheet) {
+            DeleteConfirmSheet(isPresented: $showDeleteSheet) {
+                isPresented = false
+                onDelete?()
             }
         }
     }
