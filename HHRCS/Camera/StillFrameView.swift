@@ -88,10 +88,6 @@ struct StillFrameView: View {
 struct FullscreenImageView: View {
     let image:       PlatformImage
     @Binding var isPresented: Bool
-    var luma: ChannelHistogram = .empty
-    var r:    ChannelHistogram = .empty
-    var g:    ChannelHistogram = .empty
-    var b:    ChannelHistogram = .empty
 
     @State private var scale:      CGFloat = 1.0
     @State private var lastScale:  CGFloat = 1.0
@@ -159,13 +155,6 @@ struct FullscreenImageView: View {
                 }
                 .padding(.top, 8)
                 Spacer()
-                if !luma.bins.isEmpty {
-                    HistogramView(luma: luma, r: r, g: g, b: b)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .frame(maxWidth: .infinity)
-                        .background(Theme.background.opacity(0.82))
-                }
             }
         }
     }

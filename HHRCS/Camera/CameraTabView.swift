@@ -40,15 +40,6 @@ struct CameraTabView: View {
         triggerURL: URL(string: "http://raspberrypi.local:5001/still/trigger")!,
         fetchURL:   URL(string: "http://raspberrypi.local:5001/stills/latest")!
     )
-    // HDMI histogram: GET /hdmi/histogram every 5s (BMPCC page only)
-    @StateObject private var histogramPoller = HistogramPoller(
-        fetchURL: URL(string: "http://raspberrypi.local:5001/hdmi/histogram")!
-    )
-    // BMPCC false color: GET /hdmi/falsecolor every 5s (BMPCC page only)
-    @StateObject private var falseColorPoller = FalseColorPoller(
-        fetchURL: URL(string: "http://raspberrypi.local:5001/hdmi/falsecolor")!
-    )
-
     private var isLandscape: Bool { orientationObserver.orientation.isLandscape }
 
     private func makeURL(_ path: String) -> URL {
@@ -66,14 +57,7 @@ struct CameraTabView: View {
             Theme.background.ignoresSafeArea()
 
             TabView(selection: $currentPage) {
-                StillImagePage(
-                    poller:          hdmiPoller,
-                    luma:            histogramPoller.luma,
-                    r:               histogramPoller.r,
-                    g:               histogramPoller.g,
-                    b:               histogramPoller.b,
-                    falseColorImage: falseColorPoller.latestImage
-                )
+                StillImagePage(poller: hdmiPoller)
                 .padding(.top, 32)
                 .padding(.bottom, isLandscape ? 0 : 54)
                 .tag(CameraPage.still)
@@ -124,11 +108,11 @@ struct CameraTabView: View {
         }
         .background(Theme.background)
         .onAppear { startActivePoller() }
-        .onDisappear { camPoller.stop(); hdmiPoller.stop(); histogramPoller.stop(); falseColorPoller.stop() }
+        .onDisappear { camPoller.stop(); hdmiPoller.stop() }
         .onChange(of: currentPage) { _, _ in rebalancePollers() }
         .onChange(of: isActive) { _, active in
             if active { startActivePoller() }
-            else { camPoller.stop(); hdmiPoller.stop(); histogramPoller.stop(); falseColorPoller.stop() }
+            else { camPoller.stop(); hdmiPoller.stop() }
         }
         .onChange(of: settings.piServerURL) { _, _ in updatePollerURLs() }
     }
@@ -140,12 +124,8 @@ struct CameraTabView: View {
         if currentPage == .still {
             camPoller.stop()
             hdmiPoller.start()
-            histogramPoller.start()
-            falseColorPoller.start()
         } else {
             hdmiPoller.stop()
-            histogramPoller.stop()
-            falseColorPoller.stop()
             camPoller.start()
         }
     }
@@ -155,23 +135,17 @@ struct CameraTabView: View {
         case .still:
             camPoller.stop()
             hdmiPoller.start()
-            histogramPoller.start()
-            falseColorPoller.start()
         case .live, .detection:
             hdmiPoller.stop()
-            histogramPoller.stop()
-            falseColorPoller.stop()
             camPoller.start()
         }
     }
 
     private func updatePollerURLs() {
-        hdmiPoller.triggerURL     = makeURL("/hdmi/still")
-        hdmiPoller.fetchURL       = makeURL("/hdmi/stills/latest")
-        camPoller.triggerURL      = makeURL("/still/trigger")
-        camPoller.fetchURL        = makeURL("/stills/latest")
-        histogramPoller.fetchURL  = makeURL("/hdmi/histogram")
-        falseColorPoller.fetchURL = makeURL("/hdmi/falsecolor")
+        hdmiPoller.triggerURL = makeURL("/hdmi/still")
+        hdmiPoller.fetchURL   = makeURL("/hdmi/stills/latest")
+        camPoller.triggerURL  = makeURL("/still/trigger")
+        camPoller.fetchURL    = makeURL("/stills/latest")
     }
 
     // MARK: – Data bar (BMPCC page only)
@@ -382,229 +356,21 @@ struct CameraTabView: View {
     }
 }
 
-// MARK: – False color display mode
-
-private enum DisplayMode: String {
-    case still      = "still"
-    case falseColor = "falseColor"
-}
-
-// MARK: – False color poller
-
-// Polls GET /hdmi/falsecolor every 5s; publishes the JPEG as a PlatformImage.
-final class FalseColorPoller: ObservableObject {
-    @Published var latestImage: PlatformImage? = nil
-
-    var fetchURL: URL
-    private var timer:   Timer?
-    private var running = false
-
-    init(fetchURL: URL) { self.fetchURL = fetchURL }
-
-    func start() {
-        guard !running else { return }
-        running = true
-        poll()
-        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            self?.poll()
-        }
-    }
-
-    func stop() {
-        running = false
-        timer?.invalidate()
-        timer = nil
-        DispatchQueue.main.async { self.latestImage = nil }
-    }
-
-    private func poll() {
-        var req = URLRequest(url: fetchURL)
-        req.timeoutInterval = 8
-        URLSession.shared.dataTask(with: req) { data, resp, _ in
-            guard let data, (resp as? HTTPURLResponse)?.statusCode == 200,
-                  let image = PlatformImage(data: data)
-            else { return }
-            DispatchQueue.main.async { self.latestImage = image }
-        }.resume()
-    }
-}
-
-// MARK: – False color IRE scale bar
-
-// Smooth gradient bar matching the BMPCC false color LUT anchors.
-// ARRI/BMPCC band-based scalebar. Gradient stops use empirically-shifted IRE thresholds
-// matching our 8-bit HDMI feed. Labels stay at BMPCC conceptual reference positions
-// (0–100 scale) so the operator sees the exposure intent, not pixel values.
-private struct FalseColorScalebar: View {
-    // Hard-edge band transitions via paired stops. Gradient positions use the
-    // empirically-shifted IRE values that match our 8-bit HDMI feed; labels
-    // (in the Canvas below) stay at BMPCC's conceptual reference positions.
-    private static let gradientStops: [Gradient.Stop] = [
-        // Purple band 0–5.5% (BDL)
-        .init(color: Color(red: 100/255, green:   0,       blue: 130/255), location: 0.000),
-        .init(color: Color(red: 100/255, green:   0,       blue: 130/255), location: 0.055),
-        // Blue band 5.5–10% (NBDL)
-        .init(color: Color(red:   0,     green: 100/255,   blue:   1),     location: 0.055),
-        .init(color: Color(red:   0,     green: 100/255,   blue:   1),     location: 0.100),
-        // Grey zone 10–58%
-        .init(color: Color(white: 0x1A/255),                                location: 0.100),
-        .init(color: Color(white: 0x94/255),                                location: 0.580),
-        // Green band 58–62% (18%MG)
-        .init(color: Color(red:   0,     green: 220/255,   blue:   0),     location: 0.580),
-        .init(color: Color(red:   0,     green: 220/255,   blue:   0),     location: 0.620),
-        // Grey zone 62–73%
-        .init(color: Color(white: 0x9E/255),                                location: 0.620),
-        .init(color: Color(white: 0xBA/255),                                location: 0.730),
-        // Pink band 73–77% (MG+1)
-        .init(color: Color(red: 240/255, green: 100/255,   blue: 200/255), location: 0.730),
-        .init(color: Color(red: 240/255, green: 100/255,   blue: 200/255), location: 0.770),
-        // Grey zone 77–88%
-        .init(color: Color(white: 0xC4/255),                                location: 0.770),
-        .init(color: Color(white: 0xE0/255),                                location: 0.880),
-        // Yellow band 88–93% (80%WC)
-        .init(color: Color(red: 240/255, green: 220/255,   blue:   0),     location: 0.880),
-        .init(color: Color(red: 240/255, green: 220/255,   blue:   0),     location: 0.930),
-        // Grey gap 93–95%
-        .init(color: Color(white: 0xED/255),                                location: 0.930),
-        .init(color: Color(white: 0xF2/255),                                location: 0.950),
-        // Red band 95–100% (95%WC / clip)
-        .init(color: .red,                                                   location: 0.950),
-        .init(color: .red,                                                   location: 1.000),
-    ]
-
-    var body: some View {
-        VStack(spacing: 3) {
-            // Gradient bar
-            Rectangle()
-                .fill(LinearGradient(stops: Self.gradientStops,
-                                     startPoint: .leading, endPoint: .trailing))
-                .frame(height: 4)
-            // IRE position labels
-            HStack {
-                Text("0")
-                Spacer()
-                Text("25")
-                Spacer()
-                Text("50")
-                Spacer()
-                Text("75")
-                Spacer()
-                Text("100")
-            }
-            .font(.system(size: 7, weight: .regular, design: .monospaced))
-            .foregroundStyle(Theme.tertiary)
-            // Reference band legend — positioned at approximate IRE fractions
-            Canvas { ctx, size in
-                // Labels at BMPCC conceptual reference positions (not shifted pixel values).
-                let items: [(String, CGFloat, UnitPoint)] = [
-                    ("BDL",   0.000, UnitPoint(x: 0,   y: 0.5)),
-                    ("NBDL",  0.040, UnitPoint(x: 0,   y: 0.5)),
-                    ("18%MG", 0.400, UnitPoint(x: 0.5, y: 0.5)),
-                    ("MG+1",  0.550, UnitPoint(x: 0.5, y: 0.5)),
-                    ("80%WC", 0.800, UnitPoint(x: 0.5, y: 0.5)),
-                    ("95%WC", 0.990, UnitPoint(x: 1,   y: 0.5)),
-                ]
-                for (label, frac, anchor) in items {
-                    let resolved = ctx.resolve(
-                        Text(label)
-                            .font(.system(size: 8, weight: .regular, design: .monospaced))
-                            .foregroundColor(Color(white: 0.30))
-                    )
-                    ctx.draw(resolved,
-                             at: CGPoint(x: size.width * frac, y: size.height / 2),
-                             anchor: anchor)
-                }
-            }
-            .frame(height: 10)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity)
-        .background(Theme.background)
-    }
-}
-
 // MARK: – Still image page (used by BMPCC and CAM sub-pages)
 
 private struct StillImagePage: View {
     @ObservedObject var poller: StillPoller
-    var luma:            ChannelHistogram = .empty
-    var r:               ChannelHistogram = .empty
-    var g:               ChannelHistogram = .empty
-    var b:               ChannelHistogram = .empty
-    var falseColorImage: PlatformImage?   = nil
-
-    // Long-press cycles still ↔ false color (BMPCC page only; no-op when no data).
-    @AppStorage("bmpccDisplayMode") private var displayModeRaw: String = DisplayMode.still.rawValue
     @State private var showFullscreen = false
 
-    private var displayMode:   DisplayMode { DisplayMode(rawValue: displayModeRaw) ?? .still }
-    private var hasHistogram:  Bool { !luma.bins.isEmpty }
-    private var canToggle:     Bool { hasHistogram || falseColorImage != nil }
-
     var body: some View {
-        VStack(spacing: 0) {
-            imageArea
-            bottomStrip
-        }
-        #if os(iOS)
-        .fullScreenCover(isPresented: $showFullscreen) {
-            if let image = poller.latestImage {
-                FullscreenImageView(
-                    image:       image,
-                    isPresented: $showFullscreen,
-                    luma:        luma,
-                    r:           r,
-                    g:           g,
-                    b:           b
-                )
-            }
-        }
-        #else
-        .sheet(isPresented: $showFullscreen) {
-            if let image = poller.latestImage {
-                FullscreenImageView(
-                    image:       image,
-                    isPresented: $showFullscreen,
-                    luma:        luma,
-                    r:           r,
-                    g:           g,
-                    b:           b
-                )
-            }
-        }
-        #endif
-    }
-
-    @ViewBuilder
-    private var imageArea: some View {
-        let shownImage: PlatformImage? = (displayMode == .falseColor && falseColorImage != nil)
-            ? falseColorImage
-            : poller.latestImage
-
         ZStack {
             Theme.background
 
-            if let image = shownImage {
+            if let image = poller.latestImage {
                 Image(platformImage: image)
                     .resizable()
                     .scaledToFit()
-                    .contentShape(Rectangle())
-                    .contextMenu { }          // suppress iOS image-preview on long-press
-                    .onTapGesture {
-                        if displayMode == .still { showFullscreen = true }
-                    }
-                    .simultaneousGesture(
-                        LongPressGesture(minimumDuration: 0.4)
-                            .onEnded { _ in
-                                guard canToggle else { return }
-                                let next: DisplayMode = displayMode == .still ? .falseColor : .still
-                                displayModeRaw = next.rawValue
-                                #if canImport(UIKit)
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                #endif
-                            }
-                    )
+                    .onTapGesture { showFullscreen = true }
             } else {
                 VStack(spacing: 10) {
                     Image(systemName: "photo")
@@ -618,40 +384,38 @@ private struct StillImagePage: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if displayMode == .still {
-                HStack(spacing: 10) {
-                    if let updated = poller.lastUpdated {
-                        TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                            let elapsed = Int(max(0, ctx.date.timeIntervalSince(updated)))
-                            Text("\(elapsed)s")
-                                .font(.system(size: 9, weight: .regular, design: .monospaced))
-                                .foregroundStyle(Theme.tertiary.opacity(0.4))
-                        }
-                    }
-                    Button { poller.refreshNow() } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 12))
+            HStack(spacing: 10) {
+                if let updated = poller.lastUpdated {
+                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                        let elapsed = Int(max(0, ctx.date.timeIntervalSince(updated)))
+                        Text("\(elapsed)s")
+                            .font(.system(size: 9, weight: .regular, design: .monospaced))
                             .foregroundStyle(Theme.tertiary.opacity(0.4))
                     }
-                    .buttonStyle(.plain)
                 }
-                .padding(.trailing, 12)
-                .padding(.top, 6)
+                Button { poller.refreshNow() } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.tertiary.opacity(0.4))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.trailing, 12)
+            .padding(.top, 6)
+        }
+        #if os(iOS)
+        .fullScreenCover(isPresented: $showFullscreen) {
+            if let image = poller.latestImage {
+                FullscreenImageView(image: image, isPresented: $showFullscreen)
             }
         }
-    }
-
-    @ViewBuilder
-    private var bottomStrip: some View {
-        if displayMode == .falseColor {
-            FalseColorScalebar()
-        } else if hasHistogram {
-            HistogramView(luma: luma, r: r, g: g, b: b)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity)
-                .background(Theme.background)
+        #else
+        .sheet(isPresented: $showFullscreen) {
+            if let image = poller.latestImage {
+                FullscreenImageView(image: image, isPresented: $showFullscreen)
+            }
         }
+        #endif
     }
 }
 

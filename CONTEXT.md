@@ -99,27 +99,14 @@ Key endpoints (all base: `http://192.168.10.2/control/api/v1`):
 - `GET /video/outputOverlay`   `PUT /video/outputOverlay` — **returns 404 on firmware 8.6; overlay API not implemented**; HUD toggle removed from app
 
 Pi HDMI endpoints (base: `http://raspberrypi.local:5001`):
-- `GET  /hdmi/histogram` — per-channel 64-bin histogram; returns `{"luma":{...}, "r":{...}, "g":{...}, "b":{...}, "ts":ISO8601}`. Each channel has `bins:[64 ints]`, `clipped_low_pct`, `clipped_high_pct`. Throttled to 1Hz on Pi.
-- `GET  /hdmi/falsecolor` — BMPCC-style false color JPEG (1920×1080, Q80) of latest HDMI frame. Throttled to 1Hz. 503 if HDMI offline.
-
-**BMPCC false color — smooth gradient interpolation between IRE anchors:**
-| Anchor | IRE | Color | Meaning |
-|--------|-----|-------|---------|
-| BDL    | 0   | Deep purple | Crushed black |
-| NBDL   | 4   | Bright blue | Near-black warning |
-| 18%MG  | 40  | Green       | 18% middle grey reference |
-| MG+1   | 55  | Pink        | Skin tone / one stop above MG |
-| 80%WC  | 80  | Yellow      | Highlight warning |
-| 95%WC  | 95  | Red         | Clipped white |
-
-Continuous gradient; no grey zones. Every pixel gets a color interpolated between the nearest two anchors. Image definition is preserved through gradient texture.
-
-**HDMI letterbox auto-detection:** `_detect_active_image_area()` scans row/column luminance means from each edge; any row/column below threshold 8/255 is treated as a black bar. Active area is cached and rechecked every ~25 frames (~1s), so codec/aspect ratio changes (e.g. switching between 4K DCI 17:9 and 16:9) are picked up without restart. Both `compute_histogram()` and `compute_false_color()` operate only on the detected active area — letterbox bars stay black in false color output and are excluded from histogram pixel counts. A 50% sanity-check falls back to the full frame when the scene is very dark (no bars detectable).
+- `GET  /hdmi-stream` — MJPEG live stream
+- `POST /hdmi/still` — trigger HDMI still capture
+- `GET  /hdmi/stills/latest` — fetch latest HDMI still JPEG
 
 **BMPCC operator setup (before deployment):**
-- Menu → Monitor → HDMI → Status Text → **Off** (removes firmware overlay from HDMI output)
-- Menu → Monitor → HDMI → Display 3D LUT → **Off** (ensures histogram reads true log data)
-- Menu → Monitor → HDMI → Zebra → **Off** (optional, avoids blown whites masking histogram)
+- Menu → Monitor → HDMI → Status Text → **On** (enables onboard histogram + recording state in the HDMI feed — the app displays this as part of the still image)
+- Menu → Monitor → HDMI → Display 3D LUT → on or off per preference (no longer affects app behavior)
+- Menu → Setup → Bluetooth Control → **Off** (BLE removed in ethernet migration)
 
 ---
 
@@ -230,6 +217,9 @@ First attempt: `_is_complete_jpeg()` SOI/EOI check + `CAP_PROP_FORMAT=-1` raw V4
 
 **2026-05-06 — Histogram endpoint + iOS exposure monitoring** *(histogram code deployed to Pi 2026-05-06; was written locally last session but never scp'd)*
 New Pi endpoint `GET /hdmi/histogram`: returns `{"bins":[64 ints], "clipped_low_pct":float, "clipped_high_pct":float, "ts":ISO8601}` from latest HDMI frame; throttled to 1Hz in `_read_loop`; 503 if HDMI offline. New iOS `HistogramView.swift`: `HistogramPoller` (ObservableObject, polls every 5s) + `HistogramView` (Canvas-based 64-bar rendering; bins 0/63 turn `recordingRed` when clipping >2%; clipping label shown when either value ≥0.5%). `CameraTabView` wires `histogramPoller` to BMPCC page only — starts/stops with `hdmiPoller`; `StillImagePage` gains `bins`/`clippedLow`/`clippedHigh` params, shows histogram strip below image (`.cardBackground` background). Tap-to-fullscreen added to `StillImagePage`: tapping the image opens `FullscreenImageView` with histogram overlay. `FullscreenImageView` updated: close button repositioned to `safeAreaInsets.top + 16` (Dynamic Island safe), 44×44 tap target with `contentShape(Rectangle())`; histogram pinned at bottom with `cardBackground.opacity(0.75)`. Landscape padding fix: `.padding(.bottom, isLandscape ? 0 : 54)` on all three FEED tab pages. **BMPCC operator setup (before deployment):** Menu → Monitor → HDMI → Status Text → Off; Display 3D LUT → Off (ensures histogram reads true log data).
+
+**2026-05-06 — Histogram and false color subsystems removed (Part 9)**
+Histogram and false color removed entirely. Both features derived exposure data from the 8-bit Rec.709-compressed HDMI feed, which redistributes the BMPCC's 12-bit log signal non-linearly — numeric IRE values diverge from the camera's onboard reference by ~20 IRE in highlights, making the derived data unreliable for calibrated exposure decisions. Operator instead enables BMPCC's Status Text HUD on-camera before deployment, which provides a ground-truth histogram and recording state directly in the HDMI feed image. Pi: `compute_histogram()`, `latest_histogram()`, `compute_false_color()`, `latest_false_color()`, `_get_crop()`, `_detect_active_image_area()`, `_build_false_color_lut()`, `_FALSE_COLOR_LUT`, and all associated instance attributes removed from `hdmi_stream.py`; `numpy` and `datetime` imports removed. `GET /hdmi/histogram` and `GET /hdmi/falsecolor` endpoints removed from `api_server.py`. iOS: `HistogramView.swift` deleted; `HistogramPoller`, `ChannelHistogram`, `HistogramChannel`, `FalseColorPoller`, `DisplayMode`, `FalseColorScalebar` removed from `CameraTabView.swift`; `StillImagePage` simplified to show only the still image with elapsed-time + refresh overlay; `FullscreenImageView` histogram overlay removed from `StillFrameView.swift`. BMPCC operator setup note updated: Status Text → On (was Off). Deployment verification: `/hdmi/histogram` HTTP 404, `/hdmi/falsecolor` HTTP 404, `/hdmi-stream` HTTP 200, `hdmi_reachable: True`.
 
 **2026-05-06 — False color band IRE thresholds empirically shifted for 8-bit HDMI log**
 False color band IRE thresholds shifted to compensate for 8-bit HDMI log → Rec.709 redistribution. Side-by-side comparison with BMPCC onboard false color showed a systemic IRE shift: surfaces BMPCC reads as 38 IRE (green, 18%MG) read as ~60 IRE in our 8-bit feed. `_build_false_color_lut()` updated with empirically-calibrated thresholds: Purple 0–5.5, Blue 5.5–10, Green 58–62, Pink 73–77, Yellow 88–93, Red 95+ (all IRE). Labels in `FalseColorScalebar` remain at BMPCC conceptual reference positions (BDL 0%, NBDL 4%, 18%MG 40%, MG+1 55%, 80%WC 80%, 95%WC 95%) because they describe exposure intent, not pixel values — label positions and gradient band positions are intentionally misaligned. Scalebar gradient stops updated with 20 stops to match new shifted thresholds; grey zone hex values from user spec. Deployment: HTTP 200, 314588 bytes, JPEG 1920×1080. **Operator note:** false color is visually calibrated to match BMPCC's onboard false color for the same scene, but the underlying numeric IRE values differ from BMPCC's because we read 8-bit Rec.709 HDMI, not 12-bit sensor log. Use false color as a relative exposure guide between deployments rather than a calibrated proof.
