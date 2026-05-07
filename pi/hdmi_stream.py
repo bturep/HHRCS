@@ -46,6 +46,62 @@ def _build_false_color_lut() -> np.ndarray:
 _FALSE_COLOR_LUT = _build_false_color_lut()
 
 
+def _detect_active_image_area(frame: np.ndarray) -> tuple[int, int, int, int]:
+    """
+    Return (y_start, y_end, x_start, x_end) bounding the active image area,
+    excluding HDMI letterbox / pillarbox bars.
+
+    Scans row and column luminance means from each edge; rows/columns whose
+    mean is below threshold are treated as black bars.  A 50% sanity-check
+    falls back to the full frame when the scene itself is very dark.
+    """
+    try:
+        if frame is None or frame.size == 0:
+            return (0, frame.shape[0], 0, frame.shape[1])
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
+        h, w = gray.shape
+        row_means = gray.mean(axis=1)
+
+        threshold = 8  # 8/255 — generous to handle HDMI noise floor
+
+        y_start = 0
+        for i in range(h):
+            if row_means[i] > threshold:
+                y_start = i
+                break
+
+        y_end = h
+        for i in range(h - 1, -1, -1):
+            if row_means[i] > threshold:
+                y_end = i + 1
+                break
+
+        if (y_end - y_start) < (h * 0.5):
+            return (0, h, 0, w)
+
+        col_means = gray.mean(axis=0)
+
+        x_start = 0
+        for i in range(w):
+            if col_means[i] > threshold:
+                x_start = i
+                break
+
+        x_end = w
+        for i in range(w - 1, -1, -1):
+            if col_means[i] > threshold:
+                x_end = i + 1
+                break
+
+        if (x_end - x_start) < (w * 0.5):
+            x_start, x_end = 0, w
+
+        return (y_start, y_end, x_start, x_end)
+    except Exception:
+        return (0, frame.shape[0], 0, frame.shape[1])
+
+
 class HDMIStreamer:
     def __init__(self):
         self._cap: cv2.VideoCapture | None = None
@@ -55,7 +111,9 @@ class HDMIStreamer:
         self._latest_histogram: dict | None = None
         self._latest_false_color_jpeg: bytes | None = None
         self._lock = threading.Lock()
-        self._last_hist_ts: float = 0.0  # monotonic; read_loop only
+        self._last_hist_ts: float = 0.0       # monotonic; read_loop only
+        self._cached_crop: tuple | None = None # (y0, y1, x0, x1)
+        self._crop_recheck_counter: int = 0    # recheck every 25 frames (~1s)
 
     def start(self):
         cap = cv2.VideoCapture(HDMI_DEVICE, cv2.CAP_V4L2)
@@ -115,11 +173,22 @@ class HDMIStreamer:
                 log.debug(f"HDMIStreamer.generate_mjpeg: {e}")
                 time.sleep(interval)
 
+    def _get_crop(self, frame) -> tuple[int, int, int, int]:
+        """Return cached (y0, y1, x0, x1) crop, refreshing every 25 frames."""
+        if self._cached_crop is None or self._crop_recheck_counter >= 25:
+            self._cached_crop = _detect_active_image_area(frame)
+            self._crop_recheck_counter = 0
+            log.debug(f"HDMIStreamer: crop detected {self._cached_crop}")
+        self._crop_recheck_counter += 1
+        return self._cached_crop
+
     def compute_histogram(self, frame) -> dict | None:
-        """Per-channel 64-bin histogram (luma + R, G, B). Never raises."""
+        """Per-channel 64-bin histogram (luma + R, G, B) on active image area. Never raises."""
         try:
-            gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            total = frame.shape[0] * frame.shape[1]
+            y0, y1, x0, x1 = self._get_crop(frame)
+            cropped = frame[y0:y1, x0:x1]
+            gray    = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
+            total   = cropped.shape[0] * cropped.shape[1]
 
             def _ch(arr):
                 b, _ = np.histogram(arr, bins=64, range=(0, 256))
@@ -131,9 +200,9 @@ class HDMIStreamer:
 
             return {
                 "luma": _ch(gray),
-                "r":    _ch(frame[:, :, 2]),   # OpenCV BGR: index 2 = R
-                "g":    _ch(frame[:, :, 1]),
-                "b":    _ch(frame[:, :, 0]),
+                "r":    _ch(cropped[:, :, 2]),   # OpenCV BGR: index 2 = R
+                "g":    _ch(cropped[:, :, 1]),
+                "b":    _ch(cropped[:, :, 0]),
                 "ts":   datetime.now(timezone.utc).isoformat(),
             }
         except Exception as e:
@@ -141,11 +210,15 @@ class HDMIStreamer:
             return None
 
     def compute_false_color(self, frame) -> bytes | None:
-        """Apply BMPCC IRE false-color LUT; return JPEG bytes. Never raises."""
+        """Apply BMPCC IRE false-color LUT to active area; letterbox stays black. Never raises."""
         try:
-            gray    = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            colored = _FALSE_COLOR_LUT[gray].squeeze(2)  # (H, W, 3) BGR
-            ok, buf = cv2.imencode(".jpg", colored, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            y0, y1, x0, x1 = self._get_crop(frame)
+            cropped         = frame[y0:y1, x0:x1]
+            gray            = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
+            colored_active  = _FALSE_COLOR_LUT[gray].squeeze(2)  # (crop_H, crop_W, 3) BGR
+            output          = np.zeros_like(frame)                # full frame, black bars stay
+            output[y0:y1, x0:x1] = colored_active
+            ok, buf         = cv2.imencode(".jpg", output, [cv2.IMWRITE_JPEG_QUALITY, 80])
             return buf.tobytes() if ok else None
         except Exception as e:
             log.debug(f"HDMIStreamer.compute_false_color: {e}")
