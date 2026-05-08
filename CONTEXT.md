@@ -130,6 +130,8 @@ ssh pi@raspberrypi.local "mv /home/pi/hhrcs/models/md_v1000_spruce_640.onnx.bak 
 - [ ] 24-hour burn-in test: Pi + real detector running unattended indoors, no thermal shutdown
 - [ ] BMPCC trigger chain: animal detection → state machine ACTIVE → camera records → HOLDING → COUNTDOWN → IDLE confirmed end-to-end
 - [ ] iOS smoke test: FEED stills update, detection log populates, ntfy alert lands, VERIFY mode shows correct bbox
+- [ ] Tailscale connectivity: subscribe to free Personal plan, install Tailscale on Pi, install Tailscale on iPhone. Verify the iOS app can reach the Pi via Tailscale IP (not just local WiFi mDNS). Update DataViewModel to support both endpoints with automatic fallback. Document Pi's Tailscale IP in CONTEXT.md operator notes.
+- [ ] Tailscale stress test: leave iPhone on cellular (off home WiFi) for 1+ hour, confirm /status polls succeed, stills load, ntfy pushes still arrive. Verify behavior across Pi reboot and WiFi flap at Pi side.
 
 ### Phase B — First Field Deployment
 - [ ] Overnight in yard or driveway (controlled environment, recoverable if something fails)
@@ -139,6 +141,7 @@ ssh pi@raspberrypi.local "mv /home/pi/hhrcs/models/md_v1000_spruce_640.onnx.bak 
 ### Phase C — Remote Deployment Prep
 - [ ] Power budget confirmed (Pi + BMPCC + camera + capture card at idle/active load)
 - [ ] Weatherproofing: Pelican 1510 cable routing, desiccant, condensation plan
+- [ ] Cellular fallback at remote site (mobile hotspot, LTE hat, or Starlink Mini). Tailscale relies on at least one network path reaching the Pi from the internet — without WiFi or cellular at the deploy site, the system is local-only.
 - [ ] Active cooling installed (heatsink-fan case — required for sealed enclosure; bare Pi 4 will overheat)
 - [ ] Cellular fallback: Tailscale confirmed reachable over mobile hotspot from deployment site
 - [ ] Media capacity: CFast/SSD sized for full deployment window at BRAW 12:1 65 MB/s
