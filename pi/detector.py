@@ -274,8 +274,8 @@ class Detector:
             sleep_time = 0.5 - elapsed
             if sleep_time > 0:
                 time.sleep(sleep_time)
-            elif elapsed > 0.5:
-                log.warning(f"Inference {elapsed*1000:.0f}ms exceeded 2fps budget (500ms/frame)")
+            elif elapsed > 0.6:
+                log.warning(f"Inference {elapsed*1000:.0f}ms exceeded 2fps budget (600ms/frame)")
 
     def _dispatch(self, category: str, confidence: float, bbox: list, frame_ts: str,
                   frame_w: int = 1280, frame_h: int = 720) -> None:
