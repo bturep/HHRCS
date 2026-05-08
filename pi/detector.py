@@ -210,7 +210,7 @@ class Detector:
                     continue
 
                 # Hot-reload threshold from config on every frame
-                threshold = config.detector_confidence_threshold
+                threshold = _config.detector_confidence_threshold
 
                 # Preprocess
                 padded, scale, pad_w, pad_h = self._letterbox(frame, _MODEL_INPUT_SIZE)
@@ -272,8 +272,8 @@ class Detector:
         record = {
             "ts":         frame_ts,
             "class":      category,
-            "confidence": round(confidence, 4),
-            "bbox":       [round(v, 4) for v in bbox],
+            "confidence": round(float(confidence), 4),
+            "bbox":       [round(float(v), 4) for v in bbox],
             "frame_w":    frame_w,
             "frame_h":    frame_h,
         }
@@ -293,9 +293,9 @@ class Detector:
             log.warning(f"detections.jsonl write failed: {ex}")
         # Event bus (unchanged contract)
         _emit("detector.trigger", {
-            "confidence":      round(confidence, 4),
+            "confidence":      round(float(confidence), 4),
             "category":        category,
-            "bbox":            [round(v, 4) for v in bbox],
+            "bbox":            [round(float(v), 4) for v in bbox],
             "frame_timestamp": frame_ts,
             "model_version":   _MODEL_VERSION,
         })

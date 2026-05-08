@@ -80,6 +80,44 @@ ExportOptions.plist     For future ad-hoc signed builds (requires paid Apple acc
 
 ---
 
+## Detector Real-Mode Gating
+
+`detector.py` sets `_using_real = True` only when **all four** conditions are met at startup:
+
+1. `picamera2` is importable (Pi camera library present)
+2. `onnxruntime` is importable (ONNX inference library present)
+3. `DETECTOR_ENABLED` env var is **unset** OR its value is not `"0"`
+4. The flag file `/home/pi/hhrcs/.sim_mode` does **NOT exist**
+
+If any condition fails, the detector falls back to simulation mode (`_using_real = False`), which emits fake detections on a timer without running inference.
+
+**To switch between modes:**
+```bash
+# Force simulation mode
+touch /home/pi/hhrcs/.sim_mode
+
+# Force real inference mode
+rm -f /home/pi/hhrcs/.sim_mode
+
+# Check current mode via API
+curl -s http://raspberrypi.local:5001/status | python3 -m json.tool | grep yolo_sim_mode
+```
+
+**iOS sim mode toggle is cosmetic only** — the SETTINGS toggle updates `@AppStorage` on-device but does not call any Pi endpoint. It has no effect on the running detector. To actually toggle sim mode, use `ssh` to create/remove the `.sim_mode` flag file. Wiring the toggle to a `POST /detector/sim_mode` endpoint is a future task.
+
+---
+
+## Known Issues
+
+| Severity | Issue | File | Notes |
+|----------|-------|------|-------|
+| `medium` | iOS sim mode toggle is cosmetic — does not flip Pi `.sim_mode` flag or `DETECTOR_ENABLED` env var | `SettingsTabView.swift` | Future fix: `POST /detector/sim_mode` endpoint; or remove toggle. Discovered 2026-05-07. |
+| `medium` | Detector inference ~1600ms per frame — 3× slower than 2fps (500ms) target | `detector.py` | `detector_fps_actual ≈ 0.53`. CPU at 37.9°C so thermal not the cause. Investigate: input resolution (1280×720 RGB888), onnxruntime thread config, model size. Discovered 2026-05-07. |
+| `fixed`  | `detections.jsonl` write failed: `float32 not JSON serializable` | `detector.py` | `confidence` and `bbox` values were numpy float32. Fixed in Part 4 (2026-05-07): cast to `float()` before `round()`. |
+| `fixed`  | `config.detector_confidence_threshold` NameError — should be `_config.` | `detector.py:213` | Pi was patched via `sed -i`; Mac copy fixed and committed in Part 4 (2026-05-07). |
+
+---
+
 ## Ethernet REST API
 
 The Pi controls the BMPCC 6K Pro directly via HTTP. The camera's USB-C port connects to the Pi via a USB-C-to-ethernet adapter, putting both on a private 192.168.10.0/24 subnet.
@@ -141,6 +179,8 @@ ssh pi@raspberrypi.local "sudo systemctl restart hhrcs"
 curl -s http://raspberrypi.local:5001/<new-endpoint> | python3 -m json.tool
 ```
 No exceptions. If the session ends without these steps, the Pi is running stale code and any iOS feature depending on the new endpoint will silently fail (404/503).
+
+**Mac copy sync discipline:** If a bug is patched directly on the Pi (e.g. via `sed -i`) without updating the Mac copy, the next `scp` deploy will silently reintroduce the bug. Rule: any Pi-side fix MUST be backported to the Mac copy and committed to git in the same session. Example: `detector.py` line 213 (`config.` → `_config.`) was patched on the Pi via sed; the Mac copy was fixed and committed in Part 4 (2026-05-07). If you ever find a discrepancy between a Pi file and the Mac copy, treat the Pi as ground truth only for that specific patch — always reconcile and commit.
 
 ---
 
@@ -261,6 +301,9 @@ Alert conditions reference:
 
 **2026-05-07 — YOLOv8 real-mode bring-up: ring buffer, threshold UI, VERIFY mode, LOG detections (Part 3)**
 Pi changes: (1) `detector.py` — 2fps cadence (`sleep_time = 0.5 - elapsed`; warns if inference >500ms); module-level `_recent_detections: deque` ring buffer with 24h epoch-based pruning; `_dispatch()` now builds canonical record `{ts, class, confidence, bbox, frame_w, frame_h}` and appends to ring buffer with `_ts` key; daily JSONL rotation to `data/detections_YYYY-MM-DD.jsonl`; hot-reload of `config.detector_confidence_threshold` each inference frame; FPS tracking via `_inference_ts` deque; public methods `get_recent_detections(hours=24)` and `get_fps_actual()`. (2) `api_server.py` — startup loads threshold from `data/detector_threshold.json`; `/status` gains `detector_threshold` and `detector_fps_actual`; new endpoints: `GET /detections/recent?hours=24` returns `{detections:[...]}`, `GET /detections/latest` returns single record or 404, `POST /detector/threshold` accepts `{threshold: float}` and persists to JSON file. iOS changes: (3) `DataViewModel.swift` — `DetectionHistoryItem` struct (Identifiable+Decodable, `class` key aliased to `detectionClass`; `cgRect` computed from normalized bbox; `timestamp` parsed from ISO-8601 `ts`); `@Published var detectorThreshold`, `detectorFpsActual`, `detectionHistory`; HealthPoll extended with new fields; `setDetectorThreshold()`, `startDetectionHistoryPolling()` (5s loop), `stopDetectionHistoryPolling()`, `fetchDetectionHistory()` methods. (4) `SettingsTabView.swift` — DETECTOR THRESHOLD chevron card: header shows current value `0.60`; expanded: `Slider(0.0...1.0, step: 0.05)` with label + reference marks (`0.40 PERMISSIVE` / `0.60 DEFAULT` / `0.80 STRICT`); `.onEditingChanged` fires `vm.setDetectorThreshold()`. (5) `CameraTabView.swift` — `detectVerifyMode: Bool` via `@AppStorage`; VERIFY toggle button in `detectionControlBar`; `verifyLatestDetection` (first detection ≤60s old), `verifyFiveMinCount` (count within 5min); `startVerifyPolling()`/`stopVerifyPolling()`/`fetchVerifyDetections()` (2s Task loop hitting `/detections/recent`); `DetectionOverlayView` now receives `verifyDetection:` and `verifyFiveMinCount:`. (6) `DetectionOverlayView.swift` — accepts `verifyDetection: DetectionHistoryItem?` and `verifyFiveMinCount: Int`; when non-nil, draws 2pt bounding box in class-keyed color (animal=`Theme.accentColor`, person=`Theme.recordingRed`, vehicle=`Theme.secondary`) with 8pt SF Mono label "class  0.87" above top-left corner on `Theme.background` backing; `verifyFiveMinCount > 0` shows "DETECTIONS: N / 5min" counter top-right in 11pt SF Mono `Theme.tertiary`. (7) `SessionLogView.swift` — `LogItem` enum gains `.detection(DetectionHistoryItem)` case; `SessionLogView` gains `detectionEntries: [DetectionHistoryItem] = []` param; `DetectionLogRow` private struct: time | uppercased class (class-keyed color) | confidence; empty state shows clock icon + "NO ENTRIES" when grouped is empty. (8) `NotesTabView.swift` — `logContent` passes `detectionEntries: dataVM.detectionHistory`; `.onAppear`/`.onDisappear` on `logContent` call `startDetectionHistoryPolling()`/`stopDetectionHistoryPolling()`; `.onChange(of: segment)` also manages polling lifecycle. Operator note: MegaDetectorLite classes are `animal`, `person`, `vehicle` — no species-level classification.
+
+**2026-05-07 — Detector real-mode bring-up: post-deployment fixes and status (Part 4)**
+Real inference confirmed functional end-to-end. First detection: `animal conf=0.77` at `2026-05-07T19:00:24 UTC`. Gating: real mode requires picamera2 importable + onnxruntime importable + `DETECTOR_ENABLED` not `"0"` + `/home/pi/hhrcs/.sim_mode` file absent. Removed `.sim_mode` today to enable real inference. Two bugs found and fixed: (1) `detector.py:213` — `config.detector_confidence_threshold` should be `_config.detector_confidence_threshold` (Pi was patched via `sed -i`; Mac copy fixed and committed here). (2) `detections.jsonl` write failed with `float32 not JSON serializable` — numpy float32 bbox/confidence values not castable by `json.dumps()`; fixed by wrapping with `float()` before `round()`. Known open issues: inference is ~1600ms/frame (target 500ms, 0.53 actual fps vs 2.0 target) — thermal ruled out (CPU 37.9°C); root cause unknown, likely input resolution or onnxruntime config. iOS sim mode toggle is cosmetic only — does not affect the Pi; fix deferred.
 
 **2026-05-07 — UI cleanup batch: settings/field/stills/feed (Part 10)**
 iOS-only; no Pi changes. (1) SETTINGS — LOG extracted from DIAGNOSTIC card into a standalone tappable card (`logCard`) inserted directly below DIAGNOSTIC in the settings scroll view. Header row: `LOG` title left + chevron right; tapping anywhere toggles expanded/collapsed; default collapsed; `easeInOut(0.2s)` animation. DIAGNOSTIC card now only contains dot rows and active-dot detail panel; LOG chevron button removed from DIAGNOSTIC. (2) FIELD — Swipe between STILLS / AGENT / LOG sub-pages: `switch segment {}` replaced by `TabView(selection: $segment)` with `.tabViewStyle(.page(indexDisplayMode: .never))`; existing `segment` state var drives both tab bar tap selection and swipe. (3) STILLS source label — `CapturedStill.sourceLabel` computed property added (`triggerType == "hdmi" ? "BMPCC" : "CAM"`); 9pt SF Mono `Theme.tertiary` label shown centered below each thumbnail in `StillCell` (4pt spacing); BMPCC badge (was keyed off `bmpccFilename`) removed; `FullscreenImageView` gains optional `sourceLabel: String?` shown top-left at 16pt padding. (4) STILLS empty state — "tap the camera button..." helper text removed; empty state is icon + "NO STILLS CAPTURED" only. (5) STILLS long-press delete — `LongPressGesture(minimumDuration: 0.4)` replaces `.onLongPressGesture`; `UIImpactFeedbackGenerator(style: .medium)` haptic on iOS; system `.alert()` replaced by themed `DeleteConfirmSheet` (`.sheet(isPresented:)`): `Theme.background` full-screen, `Theme.cardBackground` card with 32pt margins, centered slightly above center; "DELETE STILL?" header + "This cannot be undone." body; CANCEL (`Theme.secondary`) / DELETE (`Theme.recordingRed`) horizontal buttons; same sheet accessible from fullscreen via `FullscreenImageView`'s optional `onDelete` closure. (6) FEED — `Text("POLLING")` changed to `Text("CONNECTING")` in `CameraTabView.swift` (the empty-state label when no still is available yet).
