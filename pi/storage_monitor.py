@@ -8,6 +8,7 @@ Public API:
 import json
 import logging
 import subprocess
+import time
 from datetime import date
 from pathlib import Path
 
@@ -90,12 +91,24 @@ def _read_df():
 
 
 def _load_snapshots() -> list:
+    if not _SNAP_PATH.exists():
+        return []
     try:
-        if _SNAP_PATH.exists():
-            return json.loads(_SNAP_PATH.read_text())
-    except Exception as e:
+        content = _SNAP_PATH.read_text().strip()
+        if not content:
+            return []
+        return json.loads(content)
+    except json.JSONDecodeError as e:
+        log.warning(f"storage_monitor: snapshots file corrupted, resetting: {e}")
+        try:
+            corrupt = _SNAP_PATH.with_name(f"{_SNAP_PATH.name}.corrupt.{int(time.time())}")
+            _SNAP_PATH.rename(corrupt)
+        except OSError:
+            pass
+        return []
+    except OSError as e:
         log.warning(f"storage_monitor: load snapshots failed: {e}")
-    return []
+        return []
 
 
 def _save_snapshots(snapshots: list):

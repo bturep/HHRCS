@@ -1,15 +1,18 @@
+import MapKit
 import SwiftUI
 
 struct SettingsTabView: View {
     @EnvironmentObject var vm: DataViewModel
     @ObservedObject private var settings = AppSettings.shared
 
-    private enum DeploymentField: Hashable { case name, position, latitude, longitude }
+    private enum DeploymentField: Hashable { case name, position, address, latitude, longitude }
     @FocusState private var deploymentFocus: DeploymentField?
 
+    @StateObject private var locationSearch = LocationSearchViewModel()
     @State private var latText = ""
     @State private var lngText = ""
     @State private var isEditingAPIKey = false
+    @State private var showClearLocationSheet = false
     @State private var showAddURL      = false
     @State private var newURLDraft     = ""
 
@@ -442,6 +445,26 @@ struct SettingsTabView: View {
                         .focused($deploymentFocus, equals: .position)
                 }
 
+                deploymentField(label: "LOCATION") {
+                    TextField("Search address...", text: $locationSearch.query)
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundColor(.white)
+                        .tint(Theme.accentColor)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .focused($deploymentFocus, equals: .address)
+                        .onChange(of: locationSearch.query) { _, newVal in
+                            if newVal.isEmpty
+                                && !settings.deploymentAddress.isEmpty
+                                && deploymentFocus == .address
+                                && !locationSearch.suppressNextClearConfirmation {
+                                showClearLocationSheet = true
+                            }
+                        }
+                }
+
+                locationDropdown
+
                 deploymentField(label: "LATITUDE") {
                     TextField("48.515000", text: $latText)
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
@@ -451,7 +474,10 @@ struct SettingsTabView: View {
                         .submitLabel(.next)
                         .focused($deploymentFocus, equals: .latitude)
                         .onSubmit { commitCoords() }
-                        .onChange(of: latText) { _, _ in commitCoords() }
+                        .onChange(of: latText) { _, _ in
+                            commitCoords()
+                            if deploymentFocus == .latitude { settings.deploymentAddress = "" }
+                        }
                 }
 
                 deploymentField(label: "LONGITUDE") {
@@ -463,13 +489,20 @@ struct SettingsTabView: View {
                         .submitLabel(.next)
                         .focused($deploymentFocus, equals: .longitude)
                         .onSubmit { commitCoords() }
-                        .onChange(of: lngText) { _, _ in commitCoords() }
+                        .onChange(of: lngText) { _, _ in
+                            commitCoords()
+                            if deploymentFocus == .longitude { settings.deploymentAddress = "" }
+                        }
                 }
 
-                Text("Prospect Lake, Saanich  ·  \(String(format: "%.4f", settings.latitude)), \(String(format: "%.4f", settings.longitude))")
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .foregroundStyle(.white)
-                    .padding(.vertical, 8)
+                if !settings.deploymentAddress.isEmpty {
+                    Text(settings.deploymentAddress)
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.vertical, 8)
+                }
 
                 HRule()
 
@@ -563,6 +596,63 @@ struct SettingsTabView: View {
             }
             .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showClearLocationSheet) {
+            ClearLocationSheet(isPresented: $showClearLocationSheet) {
+                settings.deploymentAddress = ""
+                latText = ""
+                lngText = ""
+                settings.latitude  = 0
+                settings.longitude = 0
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var locationDropdown: some View {
+        if !locationSearch.results.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(Array(locationSearch.results.enumerated()), id: \.offset) { i, result in
+                    Button {
+                        Task { await selectLocation(result) }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(result.title)
+                                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                                .foregroundStyle(Theme.text)
+                                .lineLimit(1)
+                            if !result.subtitle.isEmpty {
+                                Text(result.subtitle)
+                                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                                    .foregroundStyle(Theme.tertiary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    if i < locationSearch.results.count - 1 { HRule() }
+                }
+            }
+            .padding(.bottom, 10)
+        } else if !locationSearch.query.trimmingCharacters(in: .whitespaces).isEmpty
+                    && !locationSearch.isSearching {
+            Text("NO MATCHES")
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(Theme.tertiary)
+                .padding(.vertical, 4)
+                .padding(.bottom, 6)
+        }
+    }
+
+    private func selectLocation(_ completion: MKLocalSearchCompletion) async {
+        guard let coords = await locationSearch.select(completion) else { return }
+        settings.latitude          = coords.lat
+        settings.longitude         = coords.lon
+        settings.deploymentAddress = coords.address
+        latText = String(format: "%.6f", coords.lat)
+        lngText = String(format: "%.6f", coords.lon)
+        locationSearch.clearQuery()
     }
 
     @ViewBuilder
@@ -1429,6 +1519,54 @@ private struct PINField: View {
                 .foregroundColor(.white)
                 .tint(Theme.accentColor)
                 .keyboardType(.numberPad)
+        }
+    }
+}
+
+// MARK: – Clear location confirmation sheet
+
+private struct ClearLocationSheet: View {
+    @Binding var isPresented: Bool
+    let onConfirm: () -> Void
+
+    var body: some View {
+        ZStack {
+            Theme.background.ignoresSafeArea()
+            VStack(spacing: 0) {
+                Spacer()
+                VStack(spacing: 20) {
+                    VStack(spacing: 6) {
+                        Text("CLEAR LOCATION?")
+                            .font(.system(size: 13, weight: .regular, design: .monospaced))
+                            .tracking(1.0)
+                            .foregroundStyle(.white)
+                        Text("Lat/long will also be cleared.")
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundStyle(Theme.secondary)
+                    }
+                    HStack(spacing: 16) {
+                        Button("CANCEL") { isPresented = false }
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundStyle(Theme.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.rule, lineWidth: 1))
+                            .buttonStyle(.plain)
+                        Button("CLEAR") { onConfirm(); isPresented = false }
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundStyle(Theme.dotRed)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.dotRed, lineWidth: 1))
+                            .buttonStyle(.plain)
+                    }
+                }
+                .padding(32)
+                .background(Theme.cardBackground)
+                .cornerRadius(Theme.cardRadius)
+                .padding(.horizontal, 24)
+                Spacer()
+            }
         }
     }
 }

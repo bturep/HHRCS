@@ -799,7 +799,7 @@ final class DataViewModel: ObservableObject {
         }
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         if !piBase.isEmpty {
-            for path in ["/stills/latest", "/snapshot"] {
+            for path in ["/stills/latest"] {
                 guard let url = URL(string: piBase + path) else { continue }
                 if let (data, resp) = try? await URLSession.shared.data(from: url),
                    let http = resp as? HTTPURLResponse,
@@ -832,17 +832,28 @@ final class DataViewModel: ObservableObject {
     }
 
     private func captureAndStoreSnapshot(triggerType: String) async {
-        let base = AppSettings.shared.streamBaseURL
-        if !base.isEmpty,
-           let url = URL(string: base + "/snapshot"),
-           let (data, _) = try? await URLSession.shared.data(from: url),
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty else {
+            stills.insert(CapturedStill(triggerType: triggerType), at: 0)
+            lastStillCapturedAt = Date()
+            return
+        }
+        if let url = URL(string: base + "/still/trigger") {
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.timeoutInterval = 5
+            _ = try? await URLSession.shared.data(for: req)
+        }
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        if let url = URL(string: base + "/stills/latest"),
+           let (data, resp) = try? await URLSession.shared.data(from: url),
+           let http = resp as? HTTPURLResponse, http.statusCode == 200,
            !data.isEmpty {
             lastStillData       = data
             lastStillCapturedAt = Date()
             stills.insert(CapturedStill(piCamImageData: data, triggerType: triggerType), at: 0)
         } else {
-            let still = CapturedStill(triggerType: triggerType)
-            stills.insert(still, at: 0)
+            stills.insert(CapturedStill(triggerType: triggerType), at: 0)
             lastStillCapturedAt = Date()
             lastStillData       = nil
         }

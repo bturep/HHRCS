@@ -13,6 +13,9 @@ final class AppSettings: ObservableObject {
     @Published var longitude: Double {
         didSet { UserDefaults.standard.set(longitude, forKey: Keys.longitude) }
     }
+    @Published var deploymentAddress: String {
+        didSet { UserDefaults.standard.set(deploymentAddress, forKey: Keys.deploymentAddress) }
+    }
     @Published var piServerURL: String {
         didSet { UserDefaults.standard.set(piServerURL, forKey: Keys.piServerURL) }
     }
@@ -103,6 +106,7 @@ final class AppSettings: ObservableObject {
         static let positionName             = "hhrcs.positionName"
         static let latitude                 = "hhrcs.latitude"
         static let longitude                = "hhrcs.longitude"
+        static let deploymentAddress        = "hhrcs.deploymentAddress"
         static let piServerURL              = "hhrcs.piServerURL"
         static let savedServerURLs          = "hhrcs.savedServerURLs"
         static let simulationMode           = "hhrcs.simulationMode"
@@ -130,6 +134,7 @@ final class AppSettings: ObservableObject {
         positionName             = ud.string(forKey: Keys.positionName) ?? "POSITION 1"
         latitude                 = ud.object(forKey: Keys.latitude)  as? Double ?? 48.515
         longitude                = ud.object(forKey: Keys.longitude) as? Double ?? -123.408
+        deploymentAddress        = ud.string(forKey: Keys.deploymentAddress) ?? ""
         let storedURLs           = ud.stringArray(forKey: Keys.savedServerURLs) ?? []
         let defaultURLs          = storedURLs.isEmpty
             ? ["http://raspberrypi.local:5001", "http://100.118.27.125:5001"]
