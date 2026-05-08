@@ -22,6 +22,13 @@ import time
 from datetime import datetime, timezone
 from typing import Callable, List, Optional
 
+try:
+    import cv2 as _cv2
+    _cv2_available = True
+except ImportError:
+    _cv2 = None
+    _cv2_available = False
+
 log = logging.getLogger(__name__)
 
 try:
@@ -132,9 +139,12 @@ class Detector:
         h, w = img.shape[:2]
         scale = new_shape / max(h, w)
         nh, nw = int(h * scale), int(w * scale)
-        resized = np.array(
-            __import__("PIL").Image.fromarray(img).resize((nw, nh), __import__("PIL").Image.BILINEAR)
-        )
+        if _cv2_available:
+            resized = _cv2.resize(img, (nw, nh), interpolation=_cv2.INTER_LINEAR)
+        else:
+            resized = np.array(
+                __import__("PIL").Image.fromarray(img).resize((nw, nh), __import__("PIL").Image.BILINEAR)
+            )
         pad_h = (new_shape - nh) // 2
         pad_w = (new_shape - nw) // 2
         padded = np.full((new_shape, new_shape, 3), 114, dtype=np.uint8)
@@ -179,15 +189,16 @@ class Detector:
             log.info(f"Loading ONNX model: {self.model_path}")
             t0 = time.time()
             opts = ort.SessionOptions()
-            opts.intra_op_num_threads = 2
+            opts.intra_op_num_threads = 3   # Pi 4 has 4 cores; leaves 1 for system/Flask/capture
             opts.inter_op_num_threads = 1
+            opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
             opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
             self._session = ort.InferenceSession(
                 self.model_path,
                 sess_options=opts,
                 providers=["CPUExecutionProvider"],
             )
-            log.info(f"Model loaded in {(time.time()-t0)*1000:.0f}ms")
+            log.info(f"Model loaded in {(time.time()-t0)*1000:.0f}ms — ONNX intra={opts.intra_op_num_threads}, inter={opts.inter_op_num_threads}")
 
             # Capture thread owns Picamera2 cadence (~10fps); inference reads _latest_frame.
             threading.Thread(target=self._capture_thread_loop, daemon=True, name="cam-capture").start()
