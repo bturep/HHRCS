@@ -90,6 +90,17 @@ _uptime_start = time.time()
 _current_clip_id: str = ""
 _camera_started: bool = False
 
+# Load persisted detector threshold (survives service restarts)
+_THRESHOLD_FILE = os.path.join(os.path.dirname(__file__), "data", "detector_threshold.json")
+try:
+    if os.path.exists(_THRESHOLD_FILE):
+        with open(_THRESHOLD_FILE) as _tf:
+            _saved_thresh = json.load(_tf).get("value", config.detector_confidence_threshold)
+            config.detector_confidence_threshold = float(_saved_thresh)
+            config.detection_confidence          = float(_saved_thresh)
+except Exception as _e:
+    log.warning(f"Could not load persisted threshold: {_e}")
+
 emit("system.startup", {"subsystem": "api_server"})
 
 
@@ -338,9 +349,11 @@ def status():
 
         "detector_last_inference_ago_seconds": detector.last_inference_ago_seconds,
 
-        "yolo_running":    bool(detector._thread and detector._thread.is_alive()),
-        "yolo_sim_mode":   not detector._using_real,
-        "machine_state":   sm_data["state"],
+        "yolo_running":       bool(detector._thread and detector._thread.is_alive()),
+        "yolo_sim_mode":      not detector._using_real,
+        "detector_threshold": config.detector_confidence_threshold,
+        "detector_fps_actual": detector.get_fps_actual(),
+        "machine_state":      sm_data["state"],
         "ssd_mounted":     os.path.ismount(config.ssd_mount),
         "ssd_free_pct":    _ssd_free_pct(),
 
@@ -742,6 +755,54 @@ def restart_detector_endpoint():
     except Exception as e:
         log.error(f"restart-detector failed: {e}")
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ── Detection history endpoints ────────────────────────────────────────────────
+
+@app.route("/detections/recent", methods=["GET"])
+def detections_recent():
+    """All detections from the last 24h, newest first."""
+    return jsonify({"detections": detector.get_recent_detections(hours=24)})
+
+
+@app.route("/detections/latest", methods=["GET"])
+def detections_latest():
+    """Most recent detection if it occurred within the last 60s, else null."""
+    recent_all = detector.get_recent_detections(hours=24)
+    if recent_all:
+        from datetime import datetime as _dt, timezone as _tz
+        latest = recent_all[0]
+        try:
+            ts_dt = _dt.fromisoformat(latest["ts"])
+            if ts_dt.tzinfo is None:
+                ts_dt = ts_dt.replace(tzinfo=_tz.utc)
+            age = (_dt.now(_tz.utc) - ts_dt).total_seconds()
+            if age <= 60:
+                return jsonify({"detection": latest})
+        except Exception:
+            pass
+    return jsonify({"detection": None})
+
+
+@app.route("/detector/threshold", methods=["POST"])
+def detector_threshold():
+    """Update confidence threshold in memory and persist to disk."""
+    data = request.json or {}
+    try:
+        value = float(data.get("value", config.detector_confidence_threshold))
+    except (TypeError, ValueError):
+        return jsonify({"error": "value must be a number"}), 400
+    if not (0.0 <= value <= 1.0):
+        return jsonify({"error": "value must be in [0.0, 1.0]"}), 400
+    config.detector_confidence_threshold = value
+    config.detection_confidence          = value
+    try:
+        os.makedirs(os.path.dirname(_THRESHOLD_FILE), exist_ok=True)
+        with open(_THRESHOLD_FILE, "w") as f:
+            json.dump({"value": value}, f)
+    except Exception as e:
+        log.warning(f"Could not persist threshold: {e}")
+    return jsonify({"ok": True, "value": value})
 
 
 @app.route("/notifier/test", methods=["POST"])

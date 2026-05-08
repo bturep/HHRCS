@@ -12,6 +12,8 @@ The only additions are:
   2.  _emit("detector.trigger", {...}) in _dispatch() before self.callback()
 """
 
+import collections
+import json
 import os
 import threading
 import logging
@@ -60,6 +62,13 @@ except ImportError:
 _MEGADETECTOR_CLASSES = {0: "animal", 1: "person", 2: "vehicle"}
 _MODEL_VERSION = "md_v1000_spruce"
 _MODEL_INPUT_SIZE = 640
+
+# ── Detection ring buffer (24h) + FPS tracking ────────────────────────────────
+_DATA_DIR            = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+_recent_detections: collections.deque = collections.deque()   # dicts with "_ts" epoch key
+_det_lock            = threading.Lock()
+_inference_ts:       collections.deque = collections.deque()  # epoch times of recent inferences
+_inference_lock      = threading.Lock()
 
 
 class Detector:
@@ -193,11 +202,15 @@ class Detector:
         input_name = self._session.get_inputs()[0].name
 
         while self._running:
+            t_frame_start = time.time()
             try:
                 frame = self._latest_frame
                 if frame is None:
                     time.sleep(0.1)
                     continue
+
+                # Hot-reload threshold from config on every frame
+                threshold = config.detector_confidence_threshold
 
                 # Preprocess
                 padded, scale, pad_w, pad_h = self._letterbox(frame, _MODEL_INPUT_SIZE)
@@ -206,58 +219,107 @@ class Detector:
                 # Infer
                 frame_ts = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
                 outputs = self._session.run(None, {input_name: inp})
-                self._last_inference_time = time.time()
+                t_infer_done = time.time()
+                self._last_inference_time = t_infer_done
+
+                # Track rolling-30s FPS
+                with _inference_lock:
+                    _inference_ts.append(t_infer_done)
+                    cutoff30 = t_infer_done - 30.0
+                    while _inference_ts and _inference_ts[0] < cutoff30:
+                        _inference_ts.popleft()
+
                 preds = outputs[0][0]  # [N, 6] — x1,y1,x2,y2,conf,cls
 
-                # Filter by confidence
-                mask = preds[:, 4] >= self.confidence
+                mask = preds[:, 4] >= threshold
                 preds = preds[mask]
-                if len(preds) == 0:
-                    continue
-
-                boxes = preds[:, :4]
-                scores = preds[:, 4]
-                class_ids = preds[:, 5].astype(int)
-
-                keep = self._nms(boxes, scores, iou_threshold=0.45)
-
-                for idx in keep:
-                    cls_id = class_ids[idx]
-                    conf = float(scores[idx])
-                    box_raw = boxes[idx]
-
-                    # Convert padded-image coords back to normalized original-image coords
-                    x1 = (box_raw[0] - pad_w) / (scale * frame.shape[1])
-                    y1 = (box_raw[1] - pad_h) / (scale * frame.shape[0])
-                    x2 = (box_raw[2] - pad_w) / (scale * frame.shape[1])
-                    y2 = (box_raw[3] - pad_h) / (scale * frame.shape[0])
-                    bbox = [
-                        max(0.0, min(1.0, x1)),
-                        max(0.0, min(1.0, y1)),
-                        max(0.0, min(1.0, x2)),
-                        max(0.0, min(1.0, y2)),
-                    ]
-
-                    md_category = _MEGADETECTOR_CLASSES.get(cls_id, "animal")
-                    self._dispatch(md_category, conf, bbox, frame_ts)
-                    break  # one trigger per frame
+                if len(preds) > 0:
+                    boxes = preds[:, :4]
+                    scores = preds[:, 4]
+                    class_ids = preds[:, 5].astype(int)
+                    keep = self._nms(boxes, scores, iou_threshold=0.45)
+                    for idx in keep:
+                        cls_id  = class_ids[idx]
+                        conf    = float(scores[idx])
+                        box_raw = boxes[idx]
+                        x1 = (box_raw[0] - pad_w) / (scale * frame.shape[1])
+                        y1 = (box_raw[1] - pad_h) / (scale * frame.shape[0])
+                        x2 = (box_raw[2] - pad_w) / (scale * frame.shape[1])
+                        y2 = (box_raw[3] - pad_h) / (scale * frame.shape[0])
+                        bbox = [max(0.0, min(1.0, x1)), max(0.0, min(1.0, y1)),
+                                max(0.0, min(1.0, x2)), max(0.0, min(1.0, y2))]
+                        md_category = _MEGADETECTOR_CLASSES.get(cls_id, "animal")
+                        self._dispatch(md_category, conf, bbox, frame_ts,
+                                       frame_w=frame.shape[1], frame_h=frame.shape[0])
+                        break  # one trigger per frame
 
             except Exception as e:
                 log.error(f"Detection frame error: {e}")
                 time.sleep(1.0)
                 continue
 
-    def _dispatch(self, category: str, confidence: float, bbox: list, frame_ts: str) -> None:
-        """Emit the telemetry event then invoke the callback."""
-        _emit("detector.trigger", {
+            # Target 2fps cadence (0.5s per frame)
+            elapsed = time.time() - t_frame_start
+            sleep_time = 0.5 - elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            elif elapsed > 0.5:
+                log.warning(f"Inference {elapsed*1000:.0f}ms exceeded 2fps budget (500ms/frame)")
+
+    def _dispatch(self, category: str, confidence: float, bbox: list, frame_ts: str,
+                  frame_w: int = 1280, frame_h: int = 720) -> None:
+        """Write to ring buffer + JSONL, emit telemetry event, invoke callback."""
+        record = {
+            "ts":         frame_ts,
+            "class":      category,
             "confidence": round(confidence, 4),
-            "category": category,
-            "bbox": [round(v, 4) for v in bbox],
+            "bbox":       [round(v, 4) for v in bbox],
+            "frame_w":    frame_w,
+            "frame_h":    frame_h,
+        }
+        _now = time.time()
+        # 24h ring buffer
+        with _det_lock:
+            while _recent_detections and _recent_detections[0].get("_ts", 0) < _now - 86400:
+                _recent_detections.popleft()
+            _recent_detections.append({"_ts": _now, **record})
+        # Daily JSONL — append-only, one file per day
+        try:
+            os.makedirs(_DATA_DIR, exist_ok=True)
+            fname = os.path.join(_DATA_DIR, "detections_" + datetime.now().strftime("%Y-%m-%d") + ".jsonl")
+            with open(fname, "a") as fh:
+                fh.write(json.dumps(record) + "\n")
+        except Exception as ex:
+            log.warning(f"detections.jsonl write failed: {ex}")
+        # Event bus (unchanged contract)
+        _emit("detector.trigger", {
+            "confidence":      round(confidence, 4),
+            "category":        category,
+            "bbox":            [round(v, 4) for v in bbox],
             "frame_timestamp": frame_ts,
-            "model_version": _MODEL_VERSION,
+            "model_version":   _MODEL_VERSION,
         })
         log.info(f"Detection: {category} conf={confidence:.2f}")
         self.callback(category)
+
+    # ── Public accessors ──────────────────────────────────────────────────────
+
+    def get_recent_detections(self, hours: int = 24) -> list:
+        """Return detections from last `hours` hours, newest first, without internal fields."""
+        cutoff = time.time() - hours * 3600
+        with _det_lock:
+            result = [
+                {k: v for k, v in d.items() if k != "_ts"}
+                for d in reversed(_recent_detections)
+                if d.get("_ts", 0) >= cutoff
+            ]
+        return result
+
+    def get_fps_actual(self) -> float:
+        """Rolling 30s average inference FPS (0.0 when not running or insufficient data)."""
+        with _inference_lock:
+            count = len(_inference_ts)
+        return round(count / 30.0, 2) if count >= 2 else 0.0
 
     # ── MJPEG frame provider (for /stream endpoint) ───────────────────────────
 

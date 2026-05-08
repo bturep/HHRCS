@@ -88,17 +88,20 @@ final class SessionLogStore: ObservableObject {
 enum LogItem: Identifiable {
     case session(LogEntry)
     case agent(AILogEntry)
+    case detection(DetectionHistoryItem)
 
     var id: UUID {
         switch self {
-        case .session(let e): return e.id
-        case .agent(let e):   return e.id
+        case .session(let e):   return e.id
+        case .agent(let e):     return e.id
+        case .detection(let e): return e.id
         }
     }
     var timestamp: Date {
         switch self {
-        case .session(let e): return e.timestamp
-        case .agent(let e):   return e.timestamp
+        case .session(let e):   return e.timestamp
+        case .agent(let e):     return e.timestamp
+        case .detection(let e): return e.timestamp
         }
     }
 }
@@ -108,6 +111,7 @@ enum LogItem: Identifiable {
 struct SessionLogView: View {
     @ObservedObject var store: SessionLogStore
     var agentEntries: [AILogEntry] = []
+    var detectionEntries: [DetectionHistoryItem] = []
 
     @State private var expandedID: UUID? = nil
 
@@ -124,7 +128,9 @@ struct SessionLogView: View {
     private var grouped: [EntryGroup] {
         var cal = Calendar.current
         cal.timeZone = TimeZone(identifier: "America/Vancouver")!
-        let all: [LogItem] = (store.entries.map { .session($0) } + agentEntries.map { .agent($0) })
+        let all: [LogItem] = (store.entries.map { .session($0) }
+            + agentEntries.map { .agent($0) }
+            + detectionEntries.map { .detection($0) })
             .sorted { $0.timestamp > $1.timestamp }
 
         var groups: [EntryGroup] = []
@@ -152,6 +158,20 @@ struct SessionLogView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                if grouped.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 28, weight: .thin))
+                            .foregroundStyle(Theme.tertiary)
+                        Text("NO ENTRIES")
+                            .font(Theme.dataLabel())
+                            .tracking(Theme.labelTracking)
+                            .foregroundStyle(Theme.tertiary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 80)
+                }
+
                 ForEach(grouped, id: \.header) { group in
                     Text(group.header)
                         .font(.system(size: 9, weight: .regular, design: .monospaced))
@@ -191,6 +211,8 @@ struct SessionLogView: View {
             )
         case .agent(let entry):
             AgentLogRow(entry: entry)
+        case .detection(let entry):
+            DetectionLogRow(entry: entry)
         }
     }
 }
@@ -282,6 +304,42 @@ private struct LogRow: View {
                 .foregroundStyle(Theme.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+        }
+    }
+}
+
+// MARK: – Detection log row
+
+private struct DetectionLogRow: View {
+    let entry: DetectionHistoryItem
+
+    private static let timeFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        f.timeZone = TimeZone(identifier: "America/Vancouver")
+        return f
+    }()
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(Self.timeFmt.string(from: entry.timestamp))
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(Theme.tertiary)
+            Text(entry.detectionClass.uppercased())
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(classColor)
+            Spacer()
+            Text(String(format: "%.2f", entry.confidence))
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(Theme.secondary)
+        }
+    }
+
+    private var classColor: Color {
+        switch entry.detectionClass {
+        case "animal":  return Theme.accentColor
+        case "person":  return Theme.recordingRed
+        default:        return Theme.secondary
         }
     }
 }

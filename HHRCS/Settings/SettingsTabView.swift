@@ -41,9 +41,10 @@ struct SettingsTabView: View {
     @State private var confirmOwnerPW     = ""
     @State private var ownerPWChangeMsg   = ""
 
-    @State private var showRefreshInterval = false
-    @State private var showChecklist       = false
-    @State private var showResetConfirm    = false
+    @State private var showRefreshInterval   = false
+    @State private var showDetectorThreshold = false
+    @State private var showChecklist         = false
+    @State private var showResetConfirm      = false
     @AppStorage("stillRefreshInterval") private var stillRefreshInterval: Int = 5
 
     var body: some View {
@@ -52,6 +53,7 @@ struct SettingsTabView: View {
                 diagnosticCard
                 logCard
                 refreshIntervalCard
+                detectorThresholdCard
                 deploymentCard
                 accessCard
                 systemCard
@@ -344,6 +346,77 @@ struct SettingsTabView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
         }
+    }
+
+    // MARK: – Detector threshold card
+
+    private var detectorThresholdCard: some View {
+        let threshold = vm.detectorThreshold
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { showDetectorThreshold.toggle() }
+            } label: {
+                HStack {
+                    Text("DETECTOR THRESHOLD")
+                        .font(Theme.dataLabel(size: 9))
+                        .tracking(Theme.headerTracking)
+                        .foregroundStyle(Theme.cardLabel)
+                    Spacer()
+                    Text(String(format: "%.2f", threshold))
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.secondary)
+                    Image(systemName: showDetectorThreshold ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.tertiary)
+                        .padding(.leading, 6)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if showDetectorThreshold {
+                HRule().padding(.top, 10)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(String(format: "%.2f", threshold))
+                        .font(.system(size: 13, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.text)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 4)
+                    Slider(
+                        value: Binding(
+                            get: { vm.detectorThreshold },
+                            set: { vm.detectorThreshold = $0 }
+                        ),
+                        in: 0.0...1.0,
+                        step: 0.05
+                    ) { editing in
+                        if !editing {
+                            Task { await vm.setDetectorThreshold(vm.detectorThreshold) }
+                        }
+                    }
+                    .tint(Theme.accentColor)
+                    HStack {
+                        Text("0.5 PERMISSIVE")
+                        Spacer()
+                        Text("0.7 DEFAULT")
+                        Spacer()
+                        Text("0.9 CONSERVATIVE")
+                    }
+                    .font(.system(size: 7, weight: .regular, design: .monospaced))
+                    .foregroundStyle(Theme.tertiary)
+                    Text("Lower = more triggers.  Higher = fewer false positives.")
+                        .font(.system(size: 9, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 2)
+                }
+                .padding(.top, 6)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.cardBackground)
+        .cornerRadius(Theme.cardRadius)
+        .animation(.easeInOut(duration: 0.2), value: showDetectorThreshold)
     }
 
     // MARK: – DEPLOYMENT

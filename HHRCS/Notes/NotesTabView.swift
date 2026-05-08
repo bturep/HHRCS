@@ -70,6 +70,11 @@ struct NotesTabView: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
         }
         .background(Theme.background)
+        .onChange(of: segment) { _, newSeg in
+            if newSeg == .log { dataVM.startDetectionHistoryPolling() }
+            else { dataVM.stopDetectionHistoryPolling() }
+        }
+        .onDisappear { dataVM.stopDetectionHistoryPolling() }
     }
 
     // MARK: – LOG tab
@@ -79,8 +84,11 @@ struct NotesTabView: View {
             store: logStore,
             agentEntries: settings.piAgentLogEnabled
                 ? dataVM.aiLogEntries.filter { $0.type == "summary" }
-                : []
+                : [],
+            detectionEntries: dataVM.detectionHistory
         )
+        .onAppear  { dataVM.startDetectionHistoryPolling() }
+        .onDisappear { dataVM.stopDetectionHistoryPolling() }
     }
 
     // MARK: – AGENT tab

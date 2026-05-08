@@ -9,6 +9,37 @@ enum RecordingState: Equatable {
     case finalizing  // ~10s clip flush after stop; resolves to idle once Pi confirms
 }
 
+struct DetectionHistoryItem: Identifiable, Decodable {
+    let id = UUID()
+    let ts:             String
+    let detectionClass: String
+    let confidence:     Double
+    let bbox:           [Double]   // [x_min, y_min, x_max, y_max] normalized 0–1
+    let frameW:         Int
+    let frameH:         Int
+
+    private static let isoFmt: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    var timestamp: Date { Self.isoFmt.date(from: ts) ?? Date(timeIntervalSince1970: 0) }
+
+    var cgRect: CGRect {
+        guard bbox.count == 4 else { return .zero }
+        return CGRect(x: bbox[0], y: bbox[1], width: bbox[2] - bbox[0], height: bbox[3] - bbox[1])
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case ts
+        case detectionClass = "class"
+        case confidence, bbox
+        case frameW = "frame_w"
+        case frameH = "frame_h"
+    }
+}
+
 struct StorageSnapshot: Decodable, Identifiable {
     var id: String { date }
     let date:      String
@@ -85,9 +116,14 @@ final class DataViewModel: ObservableObject {
     @Published var isCapturingStill:     Bool  = false
 
     // MARK: – YOLO / machine state (from Pi /status)
-    @Published var yoloLocked:   Bool       = false
-    @Published var machineState: String     = "IDLE"
-    @Published var detections:   [Detection] = []
+    @Published var yoloLocked:        Bool       = false
+    @Published var machineState:      String     = "IDLE"
+    @Published var detections:        [Detection] = []
+    @Published var detectorThreshold: Double     = 0.6
+    @Published var detectorFpsActual: Double?    = nil
+
+    // MARK: – Detection history (from /detections/recent, polled when LOG visible)
+    @Published var detectionHistory: [DetectionHistoryItem] = []
 
     // MARK: – HDMI
     @Published var hdmiReachable: Bool = false
@@ -151,12 +187,13 @@ final class DataViewModel: ObservableObject {
     }
 
     // MARK: – Private
-    private var simTask:           Task<Void, Never>?
-    private var trigTask:          Task<Void, Never>?
-    private var healthTask:        Task<Void, Never>?
-    private var logTask:           Task<Void, Never>?
-    private var notificationTask:  Task<Void, Never>?
-    private var finalizingTimer:   Task<Void, Never>?
+    private var simTask:                Task<Void, Never>?
+    private var trigTask:               Task<Void, Never>?
+    private var healthTask:             Task<Void, Never>?
+    private var logTask:                Task<Void, Never>?
+    private var notificationTask:       Task<Void, Never>?
+    private var finalizingTimer:        Task<Void, Never>?
+    private var detectionHistoryTask:   Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
 
     private let detectionClasses = ["deer", "fox", "raccoon", "coyote",
@@ -202,6 +239,7 @@ final class DataViewModel: ObservableObject {
         logTask?.cancel()
         notificationTask?.cancel()
         finalizingTimer?.cancel()
+        detectionHistoryTask?.cancel()
     }
 
     func suspend() {
@@ -287,6 +325,8 @@ final class DataViewModel: ObservableObject {
         let ssdMounted:                  Bool?
         let ssdFreePct:                  Double?
         let detectorLastInferenceAgoSec: Double?
+        let detectorThreshold:           Double?
+        let detectorFpsActual:           Double?
         let recording:                   Bool?
         let machineState:                String?
         let detections:                  [DetectionItem]?
@@ -311,6 +351,8 @@ final class DataViewModel: ObservableObject {
             case ssdMounted                  = "ssd_mounted"
             case ssdFreePct                  = "ssd_free_pct"
             case detectorLastInferenceAgoSec = "detector_last_inference_ago_seconds"
+            case detectorThreshold           = "detector_threshold"
+            case detectorFpsActual           = "detector_fps_actual"
             case recording
             case machineState                = "machine_state"
             case detections
@@ -331,6 +373,48 @@ final class DataViewModel: ObservableObject {
 
     func refreshHealth() async {
         await pollHealth()
+    }
+
+    // MARK: – Detector threshold
+
+    func setDetectorThreshold(_ value: Double) async {
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty, let url = URL(string: base + "/detector/threshold") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["value": value])
+        req.timeoutInterval = 5
+        _ = try? await URLSession.shared.data(for: req)
+        // On failure the next /status poll resets detectorThreshold to server's actual value
+    }
+
+    // MARK: – Detection history polling (active only when LOG sub-page visible)
+
+    func startDetectionHistoryPolling() {
+        detectionHistoryTask?.cancel()
+        detectionHistoryTask = Task {
+            while !Task.isCancelled {
+                await fetchDetectionHistory()
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+        }
+    }
+
+    func stopDetectionHistoryPolling() {
+        detectionHistoryTask?.cancel()
+        detectionHistoryTask = nil
+    }
+
+    private func fetchDetectionHistory() async {
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty, let url = URL(string: base + "/detections/recent") else { return }
+        struct Response: Decodable { let detections: [DetectionHistoryItem] }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let response  = try JSONDecoder().decode(Response.self, from: data)
+            detectionHistory = response.detections
+        } catch { }
     }
 
     private func startHealthPolling() {
@@ -358,6 +442,8 @@ final class DataViewModel: ObservableObject {
             healthPiReachable        = true
             healthYoloRunning        = poll.yoloRunning          ?? false
             healthYoloSimMode        = poll.yoloSimMode          ?? true
+            if let t = poll.detectorThreshold { detectorThreshold = t }
+            detectorFpsActual        = poll.detectorFpsActual
             healthIsRecording        = poll.recording            ?? false
             healthSsdMounted         = poll.ssdMounted           ?? false
             healthSsdFreePct         = poll.ssdFreePct           ?? 0

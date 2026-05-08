@@ -30,6 +30,11 @@ struct CameraTabView: View {
     @State private var showShutterPopover = false
     @State private var showYoloPopover    = false
 
+    // Verify mode — polls /detections/recent every 2s when active
+    @AppStorage("detectVerifyMode") private var detectVerifyMode: Bool = false
+    @State private var verifyDetections:  [DetectionHistoryItem] = []
+    @State private var verifyPollTask:    Task<Void, Never>?
+
     // HDMI still: POST /hdmi/still → GET /hdmi/stills/latest
     @StateObject private var hdmiPoller = StillPoller(
         triggerURL: URL(string: "http://raspberrypi.local:5001/hdmi/still")!,
@@ -67,10 +72,14 @@ struct CameraTabView: View {
                     .padding(.bottom, isLandscape ? 0 : 54)
                     .tag(CameraPage.live)
 
-                DetectionOverlayView(poller: camPoller)
-                    .padding(.top, 32)
-                    .padding(.bottom, isLandscape ? 0 : 54)
-                    .tag(CameraPage.detection)
+                DetectionOverlayView(
+                    poller: camPoller,
+                    verifyDetection:   verifyLatestDetection,
+                    verifyFiveMinCount: verifyFiveMinCount
+                )
+                .padding(.top, 32)
+                .padding(.bottom, isLandscape ? 0 : 54)
+                .tag(CameraPage.detection)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .ignoresSafeArea(edges: isLandscape ? .all : .top)
@@ -108,8 +117,14 @@ struct CameraTabView: View {
         }
         .background(Theme.background)
         .onAppear { startActivePoller() }
-        .onDisappear { camPoller.stop(); hdmiPoller.stop() }
+        .onDisappear {
+            camPoller.stop(); hdmiPoller.stop()
+            stopVerifyPolling()
+        }
         .onChange(of: currentPage) { _, _ in rebalancePollers() }
+        .onChange(of: detectVerifyMode) { _, on in
+            if on { startVerifyPolling() } else { stopVerifyPolling() }
+        }
         .onChange(of: isActive) { _, active in
             if active { startActivePoller() }
             else { camPoller.stop(); hdmiPoller.stop() }
@@ -313,13 +328,71 @@ struct CameraTabView: View {
 
     private var detectionControlBar: some View {
         HStack {
+            Button {
+                detectVerifyMode.toggle()
+            } label: {
+                Text("VERIFY")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .tracking(1.5)
+                    .foregroundStyle(detectVerifyMode ? Theme.accentColor : Theme.tertiary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 2)
+                            .stroke(detectVerifyMode ? Theme.accentColor : Theme.tertiary,
+                                    lineWidth: 0.5)
+                    )
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 16)
+
             Spacer()
             pageIndicator
             Spacer()
+            Color.clear.frame(width: 60)  // balance the VERIFY button width
         }
         .frame(height: 44)
         .padding(.bottom, 10)
         .background(Theme.background)
+    }
+
+    // MARK: – Verify mode polling
+
+    private var verifyLatestDetection: DetectionHistoryItem? {
+        guard detectVerifyMode, let first = verifyDetections.first else { return nil }
+        let age = Date().timeIntervalSince(first.timestamp)
+        return age <= 60 ? first : nil
+    }
+
+    private var verifyFiveMinCount: Int {
+        guard detectVerifyMode else { return 0 }
+        let cutoff = Date().addingTimeInterval(-300)
+        return verifyDetections.filter { $0.timestamp >= cutoff }.count
+    }
+
+    private func startVerifyPolling() {
+        verifyPollTask?.cancel()
+        verifyPollTask = Task {
+            while !Task.isCancelled {
+                await fetchVerifyDetections()
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
+    }
+
+    private func stopVerifyPolling() {
+        verifyPollTask?.cancel()
+        verifyPollTask = nil
+        verifyDetections = []
+    }
+
+    private func fetchVerifyDetections() async {
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty, let url = URL(string: base + "/detections/recent") else { return }
+        struct Response: Decodable { let detections: [DetectionHistoryItem] }
+        guard let (data, _) = try? await URLSession.shared.data(from: url),
+              let response  = try? JSONDecoder().decode(Response.self, from: data) else { return }
+        verifyDetections = response.detections
     }
 
     // MARK: – Page indicator
