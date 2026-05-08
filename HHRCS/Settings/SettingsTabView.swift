@@ -318,7 +318,7 @@ struct SettingsTabView: View {
                     Spacer()
                     Text(uptimeFormatted)
                         .font(Theme.bodyMono(size: 11))
-                        .foregroundStyle(Theme.primary)
+                        .foregroundStyle(Theme.text)
                 }
                 .padding(.vertical, 8)
                 HRule()
