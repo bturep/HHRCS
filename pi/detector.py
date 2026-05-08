@@ -68,7 +68,7 @@ except ImportError:
 
 _MEGADETECTOR_CLASSES = {0: "animal", 1: "person", 2: "vehicle"}
 _MODEL_VERSION = "md_v1000_spruce"
-_MODEL_INPUT_SIZE = 640
+_MODEL_INPUT_SIZE = 416
 
 # ── Detection ring buffer (24h) + FPS tracking ────────────────────────────────
 _DATA_DIR            = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -134,7 +134,7 @@ class Detector:
 
     # ── Real hardware loop ────────────────────────────────────────────────────
 
-    def _letterbox(self, img: "np.ndarray", new_shape: int = 640):
+    def _letterbox(self, img: "np.ndarray", new_shape: int = 416):
         """Resize with padding to square, return resized image and scale/pad info."""
         h, w = img.shape[:2]
         scale = new_shape / max(h, w)
