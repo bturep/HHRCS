@@ -54,6 +54,7 @@ struct SettingsTabView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 diagnosticCard
+                enclosureCard
                 logCard
                 refreshIntervalCard
                 detectorThresholdCard
@@ -302,6 +303,54 @@ struct SettingsTabView: View {
                 .frame(maxHeight: 170)
             }
         }
+    }
+
+    // MARK: – ENCLOSURE
+
+    private var enclosureCard: some View {
+        SectionCard(title: "ENCLOSURE") {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("UPTIME")
+                        .font(Theme.dataLabel(size: 9))
+                        .tracking(Theme.headerTracking)
+                        .foregroundStyle(Theme.secondary)
+                    Spacer()
+                    Text(uptimeFormatted)
+                        .font(Theme.bodyMono(size: 11))
+                        .foregroundStyle(Theme.primary)
+                }
+                .padding(.vertical, 8)
+                HRule()
+                HStack(alignment: .top) {
+                    Text("LOG")
+                        .font(Theme.dataLabel(size: 9))
+                        .tracking(Theme.headerTracking)
+                        .foregroundStyle(Theme.secondary)
+                    Spacer()
+                    Text("data/system_metrics_\(todayUTCString).jsonl")
+                        .font(.system(size: 9, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.tertiary)
+                        .multilineTextAlignment(.trailing)
+                }
+                .padding(.vertical, 8)
+            }
+        }
+    }
+
+    private var uptimeFormatted: String {
+        guard let secs = vm.uptimeSeconds else { return "—" }
+        let h = secs / 3600
+        let m = (secs % 3600) / 60
+        if h > 0 { return "\(h)h \(m)m" }
+        return "\(m)m"
+    }
+
+    private var todayUTCString: String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f.string(from: Date())
     }
 
     private var camStatus: HealthStatus {

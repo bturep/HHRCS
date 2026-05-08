@@ -18,6 +18,9 @@ import sensors as _sensors
 
 log = logging.getLogger(__name__)
 
+def _fmt(v, suffix=""):
+    return f"{v}{suffix}" if v is not None else "--"
+
 # Injected by api_server.py after constructing these objects
 _detector = None
 _sm       = None
@@ -282,8 +285,8 @@ def query_agent(question: str) -> dict:
             ]
 
             s = summary
-            hw_lux_label = "hardware" if s.get("hardware_lux") else "simulated"
-            hw_env_label = "hardware" if s.get("hardware_env") else "simulated"
+            hw_lux_label = "hardware" if s.get("hardware_lux") else "absent"
+            hw_env_label = "hardware" if s.get("hardware_env") else "absent"
             context_block = (
                 f"SYSTEM STATE\n"
                 f"state: {s['state']}\n"
@@ -298,13 +301,13 @@ def query_agent(question: str) -> dict:
                 f"ble_drops_1h: {s['ble_drops_1h']}\n"
                 f"cpu_temp_c: {s['cpu_temp_c']}\n"
                 f"\nENVIRONMENT ({hw_env_label} sensor)\n"
-                f"temperature_c: {s.get('temperature_c')}\n"
-                f"humidity_pct: {s.get('humidity_pct')}\n"
-                f"dew_point_c: {s.get('dew_point_c')}\n"
-                f"pressure_hpa: {s.get('pressure_hpa')}\n"
+                f"temperature_c: {_fmt(s.get('temperature_c'), '°C')}\n"
+                f"humidity_pct: {_fmt(s.get('humidity_pct'), '%')}\n"
+                f"dew_point_c: {_fmt(s.get('dew_point_c'), '°C')}\n"
+                f"pressure_hpa: {_fmt(s.get('pressure_hpa'), ' hPa')}\n"
                 f"\nLIGHT ({hw_lux_label} sensor)\n"
-                f"lux: {s.get('lux')}\n"
-                f"ev: {s.get('ev')}\n"
+                f"lux: {_fmt(s.get('lux'))}\n"
+                f"ev: {_fmt(s.get('ev'))}\n"
                 f"\nCAMERA & STORAGE\n"
                 f"iso: {s.get('iso')}\n"
                 f"nd_filter: {s.get('nd_filter')}\n"

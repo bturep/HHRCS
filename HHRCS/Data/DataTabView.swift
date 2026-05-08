@@ -87,23 +87,39 @@ struct DataTabView: View {
             VStack(spacing: 12) {
                 // Row 1: TEMPERATURE, HUMIDITY, DEW POINT
                 HStack(alignment: .top, spacing: 0) {
-                    MetricCell(value: String(format: "%.1f°", vm.enclosureTempC), label: "TEMPERATURE")
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                    MetricCell(value: String(format: "%.0f%%", vm.enclosureHumidity), label: "HUMIDITY")
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                    MetricCell(value: String(format: "%.1f°", vm.dewPoint), label: "DEW POINT")
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(
+                        value: vm.enclosureTempC.map { String(format: "%.1f°C", $0) } ?? "--",
+                        label: "TEMPERATURE",
+                        valueColor: vm.enclosureTempC == nil ? Theme.tertiary : .white
+                    )
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(
+                        value: vm.enclosureHumidity.map { String(format: "%.0f%%", $0) } ?? "--",
+                        label: "HUMIDITY",
+                        valueColor: vm.enclosureHumidity == nil ? Theme.tertiary : .white
+                    )
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(
+                        value: vm.dewPoint.map { String(format: "%.1f°C", $0) } ?? "--",
+                        label: "DEW POINT",
+                        valueColor: vm.dewPoint == nil ? Theme.tertiary : .white
+                    )
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .frame(maxWidth: .infinity)
 
-                // Row 2: PRESSURE, CPU TEMP, TIMECODE
+                // Row 2: PRESSURE, CPU TEMP
                 HStack(alignment: .top, spacing: 0) {
-                    MetricCell(value: String(format: "%.1f", vm.pressure), label: "PRESSURE hPa")
+                    MetricCell(
+                        value: vm.pressure.map { String(format: "%.1f", $0) } ?? "--",
+                        label: "PRESSURE hPa",
+                        valueColor: vm.pressure == nil ? Theme.tertiary : .white
+                    )
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(value: String(format: "%.1f°C", vm.cpuTemp), label: "CPU TEMP")
                         .frame(maxWidth: .infinity, alignment: .topLeading)
-                    MetricCell(value: String(format: "%.1f°", vm.cpuTemp), label: "CPU TEMP")
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                    MetricCell(value: vm.smpteTimecode, label: "TIMECODE", valueSize: 13)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    Spacer()
+                        .frame(maxWidth: .infinity)
                 }
                 .frame(maxWidth: .infinity)
             }

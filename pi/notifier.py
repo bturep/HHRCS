@@ -57,14 +57,18 @@ def send_alert(title: str, body: str, priority: str = "default", tags: list = No
         return False
 
 
-def evaluate_and_notify(summary: dict) -> None:
-    """Check summary for alert conditions; fire ntfy.sh if past 6-hour dedup window."""
+def evaluate_and_notify(summary: dict) -> list:
+    """Check summary for alert conditions; fire ntfy.sh if past 6-hour dedup window.
+    Returns list of condition keys that fired."""
     now = time.monotonic()
+    fired = []
     for key, title, body, priority, tags in _build_checks(summary):
         if _is_due(key, now):
             if send_alert(title, body, priority=priority, tags=tags):
                 with _lock:
                     _last_sent[key] = now
+                fired.append(key)
+    return fired
 
 
 # ── Internals ─────────────────────────────────────────────────────────────────
@@ -130,13 +134,21 @@ def _build_checks(summary: dict) -> list:
             ["warning", "eye"],
         ))
 
-    # Pi CPU temperature — production threshold 80°C; test_ntfy.sh uses 85°C to fire above it
+    # Pi CPU temperature — two tiers: warning >65°C, critical >80°C (test uses 85°C / 70°C)
     cpu_temp = summary.get("cpu_temp_c")
     if cpu_temp is not None and cpu_temp > 80:
         checks.append((
             "cpu_temp_high",
             "HHRCS — High CPU Temp",
-            f"Pi CPU is {cpu_temp:.1f}°C.",
+            f"Pi CPU is {cpu_temp:.1f}°C. Throttling imminent.",
+            "high",
+            ["thermometer", "warning"],
+        ))
+    elif cpu_temp is not None and cpu_temp > 65:
+        checks.append((
+            "cpu_temp_warning",
+            "HHRCS — CPU Warming",
+            f"Pi CPU is {cpu_temp:.1f}°C (above 65°C warning threshold).",
             "default",
             ["thermometer"],
         ))

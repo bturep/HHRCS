@@ -244,6 +244,12 @@ struct CameraTabView: View {
                 }
             }
             .font(.system(size: 11, weight: .regular, design: .monospaced))
+
+            Spacer()
+
+            Text("TC \(vm.camTimecode ?? "--:--:--:--")")
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .foregroundStyle(Theme.tertiary)
         }
         .padding(.horizontal, 12)
         .frame(height: 32)

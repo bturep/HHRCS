@@ -12,7 +12,7 @@ import notifier
 
 condition = sys.argv[1] if len(sys.argv) > 1 else 'all'
 
-CONDITIONS = ['ssd_critical', 'ssd_warning', 'ssd_high', 'temp_high', 'cam_unreachable', 'yolo_down']
+CONDITIONS = ['ssd_critical', 'ssd_warning', 'ssd_high', 'temp_high', 'temp_warning', 'cam_unreachable', 'yolo_down']
 
 
 def fake_summary(c):
@@ -38,6 +38,8 @@ def fake_summary(c):
         base['storage']['days_remaining'] = None
     elif c == 'temp_high':
         base['cpu_temp_c'] = 85   # above 80°C production threshold
+    elif c == 'temp_warning':
+        base['cpu_temp_c'] = 70   # between 65°C warning and 80°C critical thresholds
     elif c == 'cam_unreachable':
         base['cam_reachable'] = False
     elif c == 'yolo_down':

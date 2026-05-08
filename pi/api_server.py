@@ -45,6 +45,7 @@ import deployment
 import notifier
 import notifications
 import storage_monitor
+from system_logger import SystemLogger
 try:
     from hdmi_stream import HDMIStreamer as _HDMIStreamer
 except ImportError:
@@ -89,6 +90,7 @@ sm.manual_override = False          # explicit: fresh start is never blocked
 _uptime_start = time.time()
 _current_clip_id: str = ""
 _camera_started: bool = False
+_system_logger: SystemLogger = None   # initialized after detector is ready
 
 # Load persisted detector threshold (survives service restarts)
 _THRESHOLD_FILE = os.path.join(os.path.dirname(__file__), "data", "detector_threshold.json")
@@ -123,6 +125,8 @@ def _on_record_start(trigger):
     emit("recording.started", {"clip_id": _current_clip_id, "source": "bmpcc"})
     notifications.emit("recording.started", "HHRCS — Recording", f"Started clip {_current_clip_id}")
     log.info(f"Recording started — trigger={trigger} clip={_current_clip_id}")
+    if _system_logger:
+        _system_logger.log_event("recording", f"started clip={_current_clip_id} trigger={trigger.value}")
 
 
 def _on_record_stop(elapsed):
@@ -149,7 +153,10 @@ def _on_record_stop(elapsed):
         nd=config.nd_filter,
         files=random.randint(1, 3),
     )
-    log.info(f"Recording stopped — elapsed={int(elapsed)}s lux={lux:.1f} clip={_current_clip_id}")
+    lux_str = f"{lux:.1f}" if lux is not None else "--"
+    log.info(f"Recording stopped — elapsed={int(elapsed)}s lux={lux_str} clip={_current_clip_id}")
+    if _system_logger:
+        _system_logger.log_event("recording", f"stopped clip={_current_clip_id} duration={int(elapsed)}s")
 
 
 sm.on_record_start = _on_record_start
@@ -179,15 +186,25 @@ detector.start()
 agent.init(detector, sm, camera)
 notifier.start()
 
+_system_logger = SystemLogger(
+    detector=detector, hdmi=_hdmi, cam_client=_cam_client, uptime_start=_uptime_start
+)
+_system_logger.start()
+_system_logger.log_event("service_start", f"hhrcs.service started, pid={os.getpid()}")
+
 def _start_passive_agent():
     try:
         summary = agent.build_summary()
         summary["storage"] = storage_monitor.get_storage_stats()
         summary["yolo_running"] = bool(detector._thread and detector._thread.is_alive())
-        notifier.evaluate_and_notify(summary)
+        fired = notifier.evaluate_and_notify(summary)
+        if fired and _system_logger:
+            _system_logger.log_event("ntfy_sent", ", ".join(fired))
         agent.run_passive_summary(summary)
     except Exception as e:
         log.warning(f"Passive agent error: {e}")
+        if _system_logger:
+            _system_logger.log_event("error", f"passive agent: {e}")
     threading.Timer(300, _start_passive_agent).start()
 
 threading.Timer(60, _start_passive_agent).start()
@@ -295,10 +312,13 @@ def status():
     uptime = int(time.time() - _uptime_start)
     cam_state = _cam_client.get_full_state()
 
+    today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return jsonify({
         "deployment": config.deployment_name,
         "position": config.position_name,
         "uptime_seconds": uptime,
+        "uptime_s": uptime,
+        "system_log_path": f"data/system_metrics_{today_utc}.jsonl",
         "timestamp": datetime.now().isoformat(),
 
         "lux": sensor_data["lux"],

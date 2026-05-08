@@ -67,9 +67,9 @@ enum TriggerState: Equatable {
 final class DataViewModel: ObservableObject {
 
     // MARK: – Light
-    @Published var lux: Double = 1240
-    @Published var ev:  Double = 10.2
-    @Published var iso: Int    = 400
+    @Published var lux: Double? = nil
+    @Published var ev:  Double? = nil
+    @Published var iso: Int     = 400
 
     // MARK: – Camera
     @Published var isRecording:      Bool            = false
@@ -86,14 +86,16 @@ final class DataViewModel: ObservableObject {
     @Published var countdownValue:     Int          = 0
 
     // MARK: – Enclosure
-    @Published var enclosureTempC:    Double = 18.3
-    @Published var enclosureHumidity: Double = 61.5
-    @Published var pressure:          Double = 1013.2
-    @Published var cpuTemp:           Double = 52.4
-    @Published var smpteTimecode:     String = "00:00:00:00"
+    @Published var enclosureTempC:    Double? = nil
+    @Published var enclosureHumidity: Double? = nil
+    @Published var pressure:          Double? = nil
+    @Published var cpuTemp:           Double  = 0.0
+    @Published var smpteTimecode:     String  = "00:00:00:00"
+    @Published var camTimecode:       String? = nil
 
-    var dewPoint: Double {
-        enclosureTempC - ((100.0 - enclosureHumidity) / 5.0)
+    var dewPoint: Double? {
+        guard let t = enclosureTempC, let h = enclosureHumidity else { return nil }
+        return t - ((100.0 - h) / 5.0)
     }
 
     // MARK: – Storage
@@ -126,7 +128,8 @@ final class DataViewModel: ObservableObject {
     @Published var detectionHistory: [DetectionHistoryItem] = []
 
     // MARK: – HDMI
-    @Published var hdmiReachable: Bool = false
+    @Published var hdmiReachable:   Bool = false
+    @Published var uptimeSeconds:   Int?  = nil
 
     // MARK: – Connectivity
     @Published var lastPollAt: Date = Date()
@@ -333,6 +336,16 @@ final class DataViewModel: ObservableObject {
         let storage:                     StorageInfo?
 
         let hdmiReachable:           Bool?
+        let uptimeS:                 Int?
+
+        let temperatureC:            Double?
+        let humidityPct:             Double?
+        let dewPointC:               Double?
+        let pressureHpa:             Double?
+        let luxValue:                Double?
+        let evValue:                 Double?
+        let cpuTempC:                Double?
+        let timecode:                String?
 
         let camReachable:            Bool?
         let camRecording:            Bool?
@@ -358,6 +371,15 @@ final class DataViewModel: ObservableObject {
             case detections
             case storage
             case hdmiReachable               = "hdmi_reachable"
+            case uptimeS                     = "uptime_s"
+            case temperatureC                = "temperature_c"
+            case humidityPct                 = "humidity_pct"
+            case dewPointC                   = "dew_point_c"
+            case pressureHpa                 = "pressure_hpa"
+            case luxValue                    = "lux"
+            case evValue                     = "ev"
+            case cpuTempC                    = "cpu_temp_c"
+            case timecode
             case camReachable                = "cam_reachable"
             case camRecording                = "cam_recording"
             case camCodec                    = "cam_codec"
@@ -452,6 +474,16 @@ final class DataViewModel: ObservableObject {
             healthLastError          = nil
 
             hdmiReachable = poll.hdmiReachable ?? false
+            if let u = poll.uptimeS { uptimeSeconds = u }
+
+            // Sensor data — None from Pi serializes as null → nil here
+            enclosureTempC    = poll.temperatureC
+            enclosureHumidity = poll.humidityPct
+            pressure          = poll.pressureHpa
+            lux               = poll.luxValue
+            ev                = poll.evValue
+            if let c = poll.cpuTempC { cpuTemp = c }
+            camTimecode       = poll.timecode
 
             // Camera (ethernet REST API)
             camReachable           = poll.camReachable        ?? false
@@ -626,23 +658,8 @@ final class DataViewModel: ObservableObject {
 
     private func tick() {
         lastPollAt = Date()
-        lux  += Double.random(in: -40...40)
-        lux   = max(80, min(8000, lux))
-        ev    = lux > 0 ? log2(lux / 2.5) : 0.0
-        ev    = (ev * 10).rounded() / 10
-
         if isRecording { recordingSeconds += 2 }
         ssdRemainingGB -= isRecording ? 0.0014 : 0
-
-        enclosureTempC    += Double.random(in: -0.15...0.15)
-        enclosureTempC     = (enclosureTempC * 10).rounded() / 10
-        enclosureHumidity += Double.random(in: -0.4...0.4)
-        enclosureHumidity  = max(20, min(99, (enclosureHumidity * 10).rounded() / 10))
-
-        cpuTemp  += Double.random(in: -0.3...0.3)
-        cpuTemp   = max(40, min(85, (cpuTemp * 10).rounded() / 10))
-        pressure += Double.random(in: -0.1...0.1)
-        pressure  = (pressure * 10).rounded() / 10
 
         driveUsedPercent  += 0.002
         driveUsedPercent   = min(100, driveUsedPercent)
