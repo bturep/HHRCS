@@ -75,11 +75,6 @@ struct CameraTabView: View {
                     HRule()
                         .padding(.horizontal, Theme.pagePadding)
 
-                    // Row 2 — control strip: record / ISO / WB / SHUTTER / still
-                    controlStrip
-
-                    HRule()
-
                     // Feed — fills remaining space; chip strips overlay bottom
                     ZStack(alignment: .bottom) {
                         TabView(selection: $currentPage) {
@@ -106,6 +101,9 @@ struct CameraTabView: View {
                     }
                     .frame(maxHeight: .infinity)
 
+                    // Control strip — record / ISO / WB / SHUTTER / still
+                    HRule()
+                    controlStrip
                     HRule()
                 }
             }
@@ -242,16 +240,6 @@ struct CameraTabView: View {
             .disabled(vm.recordingState == .finalizing)
         }
         .frame(width: 36, height: 36)
-        .overlay(alignment: .top) {
-            if vm.recordingState == .finalizing {
-                Text("FIN")
-                    .font(Theme.label(size: 9))
-                    .tracking(Theme.labelTracking)
-                    .foregroundStyle(Theme.text2)
-                    .opacity(breatheOpacity)
-                    .offset(y: -13)
-            }
-        }
     }
 
     // ISO tappable label — label above, value below
@@ -275,7 +263,7 @@ struct CameraTabView: View {
         .buttonStyle(.plain)
     }
 
-    // WB tappable label — label / kelvin / preset name
+    // WB tappable label — kelvin top, preset name below
     private var wbButton: some View {
         Button {
             withAnimation(.easeInOut(duration: 0.15)) {
@@ -283,10 +271,6 @@ struct CameraTabView: View {
             }
         } label: {
             VStack(spacing: 1) {
-                Text("WB")
-                    .font(Theme.label(size: 8))
-                    .tracking(Theme.labelTracking)
-                    .foregroundStyle(Theme.text2)
                 Text("\(vm.wbKelvin)K")
                     .font(Theme.label(size: 9))
                     .tracking(Theme.labelTracking)
@@ -304,10 +288,10 @@ struct CameraTabView: View {
 
     private var wbPresetName: String {
         switch vm.wbKelvin {
-        case 3200: return "TUNGSTEN"
+        case 3200: return "TUNG"
         case 4000: return "FLUORO"
         case 5500: return "FLASH"
-        case 5600: return "DAYLIGHT"
+        case 5600: return "DAYLGT"
         case 6500: return "CLOUDY"
         case 7500: return "SHADE"
         default: return ""
@@ -407,8 +391,8 @@ struct CameraTabView: View {
 
     private var wbChipStrip: some View {
         let presets: [(String, Int)] = [
-            ("DAYLIGHT", 5600), ("CLOUDY", 6500), ("SHADE", 7500),
-            ("TUNGSTEN", 3200), ("FLUORO", 4000), ("FLASH", 5500),
+            ("TUNG", 3200), ("FLUORO", 4000), ("FLASH", 5500),
+            ("DAYLGT", 5600), ("CLOUDY", 6500), ("SHADE", 7500),
         ]
         return chipStripContainer {
             ForEach(presets, id: \.1) { name, kelvin in
@@ -441,7 +425,7 @@ struct CameraTabView: View {
         .padding(.horizontal, 8)
         .frame(height: 48)
         .frame(maxWidth: .infinity)
-        .background(Theme.surface.opacity(0.98))
+        .background(Theme.background)
     }
 
     // Single-line chip (ISO, shutter)
