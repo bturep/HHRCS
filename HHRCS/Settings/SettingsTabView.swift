@@ -68,6 +68,7 @@ struct SettingsTabView: View {
             .padding(Theme.pagePadding)
             .padding(.bottom, 40)
         }
+        .scrollIndicators(.hidden)
         .background(Theme.background)
         .clipShape(BottomRoundedRectangle(radius: Theme.cardRadius))
         .onAppear {
@@ -821,7 +822,10 @@ struct SettingsTabView: View {
                 if settings.pushNotificationsEnabled {
                     HRule()
                     VStack(spacing: 0) {
-                        ToggleRow(label: "RECORDING & STILLS", isOn: $settings.notifyRecording)
+                        ToggleRow(label: "RECORDINGS", isOn: $settings.notifyRecordings)
+                            .padding(.leading, 16)
+                        HRule()
+                        ToggleRow(label: "STILLS", isOn: $settings.notifyStills)
                             .padding(.leading, 16)
                         HRule()
                         ToggleRow(label: "ANIMAL DETECTIONS",  isOn: $settings.notifyDetections)
@@ -1025,6 +1029,7 @@ private struct NewDeploymentSheet: View {
                     .padding(.horizontal, Theme.pagePadding)
                     .padding(.top, 8)
                 }
+                .scrollIndicators(.hidden)
 
                 if !errorMsg.isEmpty {
                     Text(errorMsg)

@@ -484,6 +484,7 @@ final class DataViewModel: ObservableObject {
     }
 
     private func startHealthPolling() {
+        healthTask?.cancel()
         healthTask = Task {
             while !Task.isCancelled {
                 await pollHealth()
@@ -605,6 +606,7 @@ final class DataViewModel: ObservableObject {
     // MARK: – Notification polling (every 2s, parallel to health)
 
     private func startNotificationPolling() {
+        notificationTask?.cancel()
         notificationTask = Task {
             while !Task.isCancelled {
                 await NotificationPoller.shared.pollAndSurface()
@@ -616,6 +618,7 @@ final class DataViewModel: ObservableObject {
     // MARK: – Event log + agent log polling (every 3s)
 
     private func startLogPolling() {
+        logTask?.cancel()
         logTask = Task {
             while !Task.isCancelled {
                 await pollEventLog()

@@ -606,8 +606,6 @@ def trigger_still():
         with open(path, "wb") as f:
             f.write(jpeg)
         ts = datetime.now().strftime("%H:%M:%S")
-        log_agent_entry("observation", f"Still captured at {ts}.")
-        notifications.emit("still.captured", "HHRCS — Still", "Pi cam still saved")
         return jsonify({"ok": True, "timestamp": ts, "bytes": len(jpeg)})
     return jsonify({"ok": False, "error": "no frame available"}), 503
 
@@ -748,8 +746,6 @@ def hdmi_still():
         with open(path, "wb") as f:
             f.write(jpeg)
         ts = datetime.now().strftime("%H:%M:%S")
-        log_agent_entry("observation", f"HDMI still captured at {ts}.")
-        notifications.emit("still.captured", "HHRCS — Still", "HDMI still saved")
         return jsonify({"ok": True, "timestamp": ts, "bytes": len(jpeg)})
     return jsonify({"ok": False, "error": "no HDMI frame available"}), 503
 

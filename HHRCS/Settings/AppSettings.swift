@@ -73,8 +73,11 @@ final class AppSettings: ObservableObject {
     }
 
     // MARK: – Notification category toggles
-    @Published var notifyRecording: Bool {
-        didSet { UserDefaults.standard.set(notifyRecording, forKey: Keys.notifyRecording) }
+    @Published var notifyRecordings: Bool {
+        didSet { UserDefaults.standard.set(notifyRecordings, forKey: Keys.notifyRecordings) }
+    }
+    @Published var notifyStills: Bool {
+        didSet { UserDefaults.standard.set(notifyStills, forKey: Keys.notifyStills) }
     }
     @Published var notifyDetections: Bool {
         didSet { UserDefaults.standard.set(notifyDetections, forKey: Keys.notifyDetections) }
@@ -132,7 +135,8 @@ final class AppSettings: ObservableObject {
         static let anthropicAPIKey          = "hhrcs.anthropicAPIKey"
         static let ownerModeEnabled         = "hhrcs.ownerModeEnabled"
         static let ownerPassword            = "hhrcs.ownerPassword"
-        static let notifyRecording          = "hhrcs.notifyRecording"
+        static let notifyRecordings         = "hhrcs.notifyRecordings"
+        static let notifyStills             = "hhrcs.notifyStills"
         static let notifyDetections         = "hhrcs.notifyDetections"
         static let notifyDeployments        = "hhrcs.notifyDeployments"
         static let notifySystemAlerts       = "hhrcs.notifySystemAlerts"
@@ -166,7 +170,8 @@ final class AppSettings: ObservableObject {
         anthropicAPIKey          = ud.string(forKey: Keys.anthropicAPIKey) ?? Self.anthropicAPIKeyDefault
         ownerModeEnabled         = ud.object(forKey: Keys.ownerModeEnabled) as? Bool ?? false
         ownerPassword            = ud.string(forKey: Keys.ownerPassword) ?? "0000"
-        notifyRecording          = ud.object(forKey: Keys.notifyRecording)       as? Bool ?? true
+        notifyRecordings         = ud.object(forKey: Keys.notifyRecordings)      as? Bool ?? true
+        notifyStills             = ud.object(forKey: Keys.notifyStills)          as? Bool ?? true
         notifyDetections         = ud.object(forKey: Keys.notifyDetections)      as? Bool ?? true
         notifyDeployments        = ud.object(forKey: Keys.notifyDeployments)     as? Bool ?? true
         notifySystemAlerts       = ud.object(forKey: Keys.notifySystemAlerts)    as? Bool ?? true

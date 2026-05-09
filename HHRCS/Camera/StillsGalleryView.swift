@@ -33,6 +33,7 @@ struct StillsGalleryView: View {
                     }
                     .padding(Theme.pagePadding)
                 }
+                .scrollIndicators(.hidden)
                 .background(Theme.background)
             }
 

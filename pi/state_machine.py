@@ -1,8 +1,11 @@
 import time
 import threading
+import logging
 from enum import Enum
 from typing import Optional, Callable
 from config import config
+
+log = logging.getLogger(__name__)
 
 try:
     from events import emit as _emit
@@ -50,8 +53,6 @@ class StateMachine:
             if self.manual_override:
                 return
             self.window_open = True
-            if self.state == RecordState.IDLE:
-                self._start_recording(trigger)
 
     def close_window(self):
         with self._lock:
@@ -70,7 +71,7 @@ class StateMachine:
             if self.state == RecordState.IDLE and self.window_open:
                 self._start_recording(trigger)
             elif self.state == RecordState.IDLE and not self.window_open:
-                self._start_recording(trigger)
+                log.debug(f"detection suppressed — window closed ({class_name})")
             elif self.state == RecordState.HOLDING:
                 prev = self.state
                 self.state = RecordState.ACTIVE

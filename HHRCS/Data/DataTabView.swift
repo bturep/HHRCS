@@ -16,6 +16,7 @@ struct DataTabView: View {
             .padding(Theme.pagePadding)
             .padding(.bottom, 20)
         }
+        .scrollIndicators(.hidden)
         .background(Theme.background)
         .refreshable {
             await vm.refreshWeather()
@@ -172,13 +173,14 @@ struct DataTabView: View {
 
                 HRule()
 
-                ScrollView(.horizontal, showsIndicators: false) {
+                ScrollView(.horizontal) {
                     HStack(spacing: 0) {
                         ForEach(Array(w.hourly.enumerated()), id: \.offset) { _, hour in
                             HourCell(hour: hour)
                         }
                     }
                 }
+                .scrollIndicators(.hidden)
 
             } else if let err = vm.weatherError {
                 Text(err)

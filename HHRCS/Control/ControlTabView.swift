@@ -81,6 +81,7 @@ struct ControlTabView: View {
             .padding(Theme.pagePadding)
             .padding(.bottom, 20)
         }
+        .scrollIndicators(.hidden)
         .background(Theme.background)
     }
 

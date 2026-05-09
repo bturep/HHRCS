@@ -268,6 +268,7 @@ struct HealthDetailSheet: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
             }
+            .scrollIndicators(.hidden)
         }
         .background(Theme.cardBackground)
         .presentationDetents([.fraction(0.35)])

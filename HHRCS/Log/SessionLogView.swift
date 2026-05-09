@@ -193,6 +193,7 @@ struct SessionLogView: View {
             }
             .padding(.bottom, 20)
         }
+        .scrollIndicators(.hidden)
         .background(Theme.background)
     }
 

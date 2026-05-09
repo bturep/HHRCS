@@ -38,24 +38,18 @@ struct NotesTabView: View {
             HStack(spacing: 24) {
                 ForEach(FieldSegment.allCases, id: \.self) { s in
                     Button(action: { withAnimation(.easeInOut(duration: 0.15)) { segment = s } }) {
-                        VStack(spacing: 5) {
-                            Text(s.rawValue)
-                                .font(Theme.dataLabel(size: 11))
-                                .tracking(Theme.labelTracking)
-                                .foregroundStyle(segment == s ? .white : Theme.tertiary)
-                                .fontWeight(segment == s ? .medium : .regular)
-                            Rectangle()
-                                .fill(segment == s ? settings.activeColor : Color.clear)
-                                .frame(height: 1)
-                        }
+                        Text(s.rawValue)
+                            .font(Theme.dataLabel(size: 11))
+                            .tracking(Theme.labelTracking)
+                            .foregroundStyle(segment == s ? Theme.text1 : Theme.tertiary)
+                            .fontWeight(segment == s ? .semibold : .regular)
                     }
                     .buttonStyle(.plain)
                 }
                 Spacer()
             }
             .padding(.horizontal, Theme.pagePadding)
-            .padding(.top, 16)
-            .padding(.bottom, 10)
+            .frame(height: 32)
 
             HRule().padding(.horizontal, Theme.pagePadding)
 
@@ -123,6 +117,7 @@ struct NotesTabView: View {
                     .padding(.top, 16)
                     .padding(.bottom, 8)
                 }
+                .scrollIndicators(.hidden)
                 .onAppear {
                     withAnimation(.none) { proxy.scrollTo("bottomAnchor", anchor: .bottom) }
                     guard !startupQueryFired else { return }

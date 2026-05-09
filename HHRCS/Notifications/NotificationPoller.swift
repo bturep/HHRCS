@@ -37,8 +37,10 @@ actor NotificationPoller {
         // Client-side category filter — Pi sends everything; iOS decides what to surface
         let filtered = all.filter { n in
             switch n.type {
-            case "recording.started", "recording.stopped", "still.captured":
-                return settings.notifyRecording
+            case "recording.started", "recording.stopped":
+                return settings.notifyRecordings
+            case "still.captured":
+                return settings.notifyStills
             case "detection.animal":
                 return settings.notifyDetections
             case "deployment.opened", "deployment.closed":
