@@ -67,14 +67,20 @@ struct CameraTabView: View {
                 .ignoresSafeArea()
             } else {
                 VStack(spacing: 0) {
-                    pageIndicator
+                    // Row 1 — tab strip: BMPCC / CAM left, refresh right
+                    tabStripRow
                         .padding(.horizontal, Theme.pagePadding)
                         .frame(height: 32)
 
                     HRule()
                         .padding(.horizontal, Theme.pagePadding)
 
-                    // Feed + chip strip overlay
+                    // Row 2 — control strip: record / ISO / WB / SHUTTER / still
+                    controlStrip
+
+                    HRule()
+
+                    // Feed — fills remaining space; chip strips overlay bottom
                     ZStack(alignment: .bottom) {
                         TabView(selection: $currentPage) {
                             StillImagePage(poller: hdmiPoller, recordingState: vm.recordingState)
@@ -86,13 +92,11 @@ struct CameraTabView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                         if activeStrip != nil {
-                            // Transparent area — tap anywhere in feed to dismiss
                             Color.clear
                                 .contentShape(Rectangle())
                                 .onTapGesture {
                                     withAnimation(.easeInOut(duration: 0.15)) { activeStrip = nil }
                                 }
-                            // Chip strip — on top of dismiss layer
                             chipStripView
                                 .transition(.asymmetric(
                                     insertion: .move(edge: .bottom).combined(with: .opacity),
@@ -101,9 +105,6 @@ struct CameraTabView: View {
                         }
                     }
                     .frame(maxHeight: .infinity)
-
-                    // Bottom block
-                    bottomBlock
 
                     HRule()
                 }
@@ -163,62 +164,51 @@ struct CameraTabView: View {
         camPoller.fetchURL    = makeURL("/stills/latest")
     }
 
-    // MARK: – Page indicator
+    // MARK: – Row 1: Tab strip + refresh
 
-    private var pageIndicator: some View {
-        HStack(spacing: 24) {
-            ForEach(CameraPage.allCases, id: \.rawValue) { page in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.25)) { currentPage = page }
-                } label: {
-                    Text(page.label)
-                        .font(Theme.label(size: 11))
-                        .fontWeight(page == currentPage ? .semibold : .regular)
-                        .tracking(Theme.labelTracking)
-                        .foregroundStyle(page == currentPage ? settings.activeColor : Theme.tertiary)
+    private var tabStripRow: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 24) {
+                ForEach(CameraPage.allCases, id: \.rawValue) { page in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) { currentPage = page }
+                    } label: {
+                        Text(page.label)
+                            .font(Theme.label(size: 11))
+                            .fontWeight(page == currentPage ? .semibold : .regular)
+                            .tracking(Theme.labelTracking)
+                            .foregroundStyle(page == currentPage ? settings.activeColor : Theme.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .animation(.easeInOut(duration: 0.2), value: currentPage)
                 }
-                .buttonStyle(.plain)
-                .animation(.easeInOut(duration: 0.2), value: currentPage)
             }
             Spacer()
+            if currentPage == .still {
+                refreshControl
+            }
         }
     }
 
-    // MARK: – Bottom block (ISO / WB / SHUTTER / refresh + record + still)
+    // MARK: – Row 2: Control strip
 
-    private var bottomBlock: some View {
+    private var controlStrip: some View {
         HStack(alignment: .center, spacing: 0) {
             switch currentPage {
             case .still:
-                // Record button (fixed frame — FINALIZING overlaid, never shifts layout)
                 recordButtonView
                     .frame(maxWidth: .infinity)
 
                 if settings.ownerModeEnabled {
-                    // ISO
-                    isoButton
-                        .frame(maxWidth: .infinity)
-
-                    // WB
-                    wbButton
-                        .frame(maxWidth: .infinity)
-
-                    // Refresh countdown + button (center)
-                    refreshControl
-                        .frame(maxWidth: .infinity)
-
-                    // SHUTTER
-                    shutterButton
-                        .frame(maxWidth: .infinity)
+                    isoButton.frame(maxWidth: .infinity)
+                    wbButton.frame(maxWidth: .infinity)
+                    shutterButton.frame(maxWidth: .infinity)
                 } else {
                     Spacer().frame(maxWidth: .infinity)
                     Spacer().frame(maxWidth: .infinity)
-                    refreshControl
-                        .frame(maxWidth: .infinity)
                     Spacer().frame(maxWidth: .infinity)
                 }
 
-                // Still (camera.aperture)
                 stillCaptureButton(for: .still)
                     .frame(maxWidth: .infinity)
 
@@ -230,11 +220,10 @@ struct CameraTabView: View {
         }
         .frame(height: 44)
         .padding(.horizontal, 8)
-        .padding(.bottom, 10)
         .background(Theme.background)
     }
 
-    // Record button — fixed outer frame; FINALIZING overlaid above icon, nothing shifts
+    // Record button — fixed frame; FIN overlaid above, nothing shifts
     @ViewBuilder
     private var recordButtonView: some View {
         ZStack {
@@ -256,16 +245,16 @@ struct CameraTabView: View {
         .overlay(alignment: .top) {
             if vm.recordingState == .finalizing {
                 Text("FIN")
-                    .font(.system(size: 7, weight: .regular, design: .monospaced))
-                    .tracking(0.8)
+                    .font(Theme.label(size: 9))
+                    .tracking(Theme.labelTracking)
                     .foregroundStyle(Theme.text2)
                     .opacity(breatheOpacity)
-                    .offset(y: -11)
+                    .offset(y: -13)
             }
         }
     }
 
-    // ISO tappable label
+    // ISO tappable label — label above, value below
     private var isoButton: some View {
         Button {
             withAnimation(.easeInOut(duration: 0.15)) {
@@ -273,20 +262,20 @@ struct CameraTabView: View {
             }
         } label: {
             VStack(spacing: 1) {
-                Text("\(vm.iso)")
-                    .font(Theme.label(size: 11))
-                    .tracking(Theme.labelTracking)
-                    .foregroundStyle(activeStrip == .iso ? settings.activeColor : Theme.text2)
                 Text("ISO")
                     .font(Theme.label(size: 8))
                     .tracking(Theme.labelTracking)
-                    .foregroundStyle(Theme.text3)
+                    .foregroundStyle(Theme.text2)
+                Text("\(vm.iso)")
+                    .font(Theme.label(size: 9))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(activeStrip == .iso ? settings.activeColor : Theme.text1)
             }
         }
         .buttonStyle(.plain)
     }
 
-    // WB tappable label
+    // WB tappable label — label / kelvin / preset name
     private var wbButton: some View {
         Button {
             withAnimation(.easeInOut(duration: 0.15)) {
@@ -294,20 +283,38 @@ struct CameraTabView: View {
             }
         } label: {
             VStack(spacing: 1) {
-                Text("\(vm.wbKelvin)K")
-                    .font(Theme.label(size: 11))
-                    .tracking(Theme.labelTracking)
-                    .foregroundStyle(activeStrip == .wb ? settings.activeColor : Theme.text2)
                 Text("WB")
                     .font(Theme.label(size: 8))
                     .tracking(Theme.labelTracking)
-                    .foregroundStyle(Theme.text3)
+                    .foregroundStyle(Theme.text2)
+                Text("\(vm.wbKelvin)K")
+                    .font(Theme.label(size: 9))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(activeStrip == .wb ? settings.activeColor : Theme.text1)
+                if !wbPresetName.isEmpty {
+                    Text(wbPresetName)
+                        .font(Theme.label(size: 8))
+                        .tracking(Theme.labelTracking)
+                        .foregroundStyle(Theme.text3)
+                }
             }
         }
         .buttonStyle(.plain)
     }
 
-    // SHUTTER tappable label
+    private var wbPresetName: String {
+        switch vm.wbKelvin {
+        case 3200: return "TUNGSTEN"
+        case 4000: return "FLUORO"
+        case 5500: return "FLASH"
+        case 5600: return "DAYLIGHT"
+        case 6500: return "CLOUDY"
+        case 7500: return "SHADE"
+        default: return ""
+        }
+    }
+
+    // SHUTTER tappable label — label above, value below
     private var shutterButton: some View {
         Button {
             withAnimation(.easeInOut(duration: 0.15)) {
@@ -315,14 +322,14 @@ struct CameraTabView: View {
             }
         } label: {
             VStack(spacing: 1) {
-                Text(shutterLabelText)
-                    .font(Theme.label(size: 11))
-                    .tracking(Theme.labelTracking)
-                    .foregroundStyle(activeStrip == .shutter ? settings.activeColor : Theme.text2)
                 Text("SHUTTER")
                     .font(Theme.label(size: 8))
                     .tracking(Theme.labelTracking)
-                    .foregroundStyle(Theme.text3)
+                    .foregroundStyle(Theme.text2)
+                Text(shutterLabelText)
+                    .font(Theme.label(size: 9))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(activeStrip == .shutter ? settings.activeColor : Theme.text1)
             }
         }
         .buttonStyle(.plain)
@@ -335,7 +342,7 @@ struct CameraTabView: View {
             : String(format: "%.1f°", a)
     }
 
-    // Refresh countdown + button
+    // Refresh countdown + ↻ button (shown in tab strip row on BMPCC page)
     private var refreshControl: some View {
         HStack(spacing: 4) {
             if let updated = hdmiPoller.lastUpdated {
@@ -373,7 +380,7 @@ struct CameraTabView: View {
         }
     }
 
-    // MARK: – Chip strips (inline, overlays bottom of feed)
+    // MARK: – Chip strips (overlay bottom of feed)
 
     @ViewBuilder
     private var chipStripView: some View {
@@ -400,12 +407,12 @@ struct CameraTabView: View {
 
     private var wbChipStrip: some View {
         let presets: [(String, Int)] = [
-            ("TUNG", 3200), ("FLUORO", 4000), ("FLASH", 5500),
-            ("DAYLT", 5600), ("CLOUDY", 6500), ("SHADE", 7500),
+            ("DAYLIGHT", 5600), ("CLOUDY", 6500), ("SHADE", 7500),
+            ("TUNGSTEN", 3200), ("FLUORO", 4000), ("FLASH", 5500),
         ]
         return chipStripContainer {
             ForEach(presets, id: \.1) { name, kelvin in
-                chipButton(label: name, isActive: vm.wbKelvin == kelvin) {
+                wbChipButton(name: name, kelvin: kelvin, isActive: vm.wbKelvin == kelvin) {
                     vm.wbKelvin = kelvin
                     Task { await vm.setWB(kelvin) }
                     withAnimation(.easeInOut(duration: 0.15)) { activeStrip = nil }
@@ -432,11 +439,12 @@ struct CameraTabView: View {
             content()
         }
         .padding(.horizontal, 8)
-        .frame(height: 40)
+        .frame(height: 48)
         .frame(maxWidth: .infinity)
         .background(Theme.surface.opacity(0.98))
     }
 
+    // Single-line chip (ISO, shutter)
     private func chipButton(label: String, isActive: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
@@ -452,6 +460,32 @@ struct CameraTabView: View {
                     RoundedRectangle(cornerRadius: 4)
                         .stroke(isActive ? Color.clear : Theme.rule, lineWidth: Theme.ruleWidth)
                 )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // Two-line chip for WB (preset name + kelvin)
+    private func wbChipButton(name: String, kelvin: Int, isActive: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Text(name)
+                    .font(Theme.label(size: 9))
+                    .fontWeight(isActive ? .semibold : .regular)
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(isActive ? Theme.background : Theme.text2)
+                Text("\(kelvin)K")
+                    .font(Theme.label(size: 8))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(isActive ? Theme.background : Theme.text3)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 5)
+            .background(isActive ? settings.activeColor : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(isActive ? Color.clear : Theme.rule, lineWidth: Theme.ruleWidth)
+            )
         }
         .buttonStyle(.plain)
     }
