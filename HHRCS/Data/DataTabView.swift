@@ -25,18 +25,27 @@ struct DataTabView: View {
 
     // MARK: – Camera (BMPCC via ethernet)
     private var cameraSection: some View {
-        SectionCard(title: "CAMERA") {
+        let codecDisplay: String = {
+            let base = vm.camCodec
+            if let v = vm.camCodecVariant { return "\(base) · \(v)" }
+            return base
+        }()
+        return SectionCard(title: "CAMERA") {
             VStack(spacing: 12) {
+                // CODEC (with variant) · SHUTTER · spacer
                 HStack(alignment: .top, spacing: 0) {
-                    MetricCell(value: vm.camCodec, label: "CODEC")
+                    MetricCell(value: codecDisplay, label: "CODEC")
                         .frame(maxWidth: .infinity, alignment: .topLeading)
-                    MetricCell(value: vm.camFrameRate, label: "FRAME RATE")
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                    MetricCell(value: vm.camResolution, label: "RESOLUTION")
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(
+                        value: vm.camShutterAngle.map { String(format: "%.1f°", $0) } ?? "—",
+                        label: "SHUTTER ANG"
+                    )
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    Spacer().frame(maxWidth: .infinity)
                 }
                 .frame(maxWidth: .infinity)
 
+                // ISO · WHITE BAL · GAIN
                 HStack(alignment: .top, spacing: 0) {
                     MetricCell(value: vm.camIso.map { "\($0)" } ?? "—", label: "ISO")
                         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -47,27 +56,8 @@ struct DataTabView: View {
                 }
                 .frame(maxWidth: .infinity)
 
+                // MEDIA SLOT · REC TIME LEFT · spacer
                 HStack(alignment: .top, spacing: 0) {
-                    let recLabel: String = {
-                        switch vm.recordingState {
-                        case .recording:  return "YES"
-                        case .finalizing: return "FINALIZING"
-                        case .idle:       return "NO"
-                        }
-                    }()
-                    let recColor: Color = {
-                        switch vm.recordingState {
-                        case .recording:  return Theme.dotRed
-                        case .finalizing: return Theme.text2
-                        case .idle:       return .white
-                        }
-                    }()
-                    MetricCell(
-                        value:      recLabel,
-                        label:      "RECORDING",
-                        valueColor: recColor
-                    )
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
                     MetricCell(value: vm.camActiveMediaSlot, label: "MEDIA SLOT")
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                     MetricCell(
@@ -75,35 +65,20 @@ struct DataTabView: View {
                         label: "REC TIME LEFT"
                     )
                     .frame(maxWidth: .infinity, alignment: .topLeading)
+                    Spacer().frame(maxWidth: .infinity)
                 }
                 .frame(maxWidth: .infinity)
 
+                // FORMAT · spacer · spacer
                 HStack(alignment: .top, spacing: 0) {
-                    MetricCell(
-                        value: vm.camShutterAngle.map { String(format: "%.1f°", $0) } ?? "—",
-                        label: "SHUTTER ANG"
-                    )
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    MetricCell(
-                        value: vm.camLens ?? "—",
-                        label: "LENS"
-                    )
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    Spacer()
-                        .frame(maxWidth: .infinity)
-                }
-                .frame(maxWidth: .infinity)
-
-                HStack(alignment: .top, spacing: 0) {
-                    MetricCell(value: vm.camCodecVariant ?? "—", label: "CODEC VAR")
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
                     MetricCell(value: vm.camFormatDetails ?? "—", label: "FORMAT")
                         .frame(maxWidth: .infinity, alignment: .topLeading)
-                    Spacer()
-                        .frame(maxWidth: .infinity)
+                    Spacer().frame(maxWidth: .infinity)
+                    Spacer().frame(maxWidth: .infinity)
                 }
                 .frame(maxWidth: .infinity)
 
+                // MEDIA VOL · CLIP COUNT · SPACE REM
                 HStack(alignment: .top, spacing: 0) {
                     MetricCell(value: vm.camMediaVolume ?? "—", label: "MEDIA VOL")
                         .frame(maxWidth: .infinity, alignment: .topLeading)

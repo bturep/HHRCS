@@ -52,17 +52,17 @@ struct SettingsTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                displayCard
                 diagnosticCard
                 enclosureCard
+                deploymentCard
                 refreshIntervalCard
                 detectorThresholdCard
-                deploymentCard
                 accessCard
                 systemCard
                 agentCard
-                deploymentChecklistCard
                 notificationsCard
+                deploymentChecklistCard
+                displayCard
                 versionRow
             }
             .padding(Theme.pagePadding)
@@ -308,9 +308,10 @@ struct SettingsTabView: View {
     }
 
     private var piSdStatus: HealthStatus {
-        guard vm.healthSsdMounted else { return .red }
-        if vm.healthSsdFreePct < 5  { return .red }
-        if vm.healthSsdFreePct < 10 { return .yellow }
+        guard vm.healthPiReachable else { return .grey }
+        guard let used = vm.piSdUsedPct else { return .grey }
+        if used > 95 { return .red }
+        if used > 80 { return .yellow }
         return .green
     }
 
@@ -645,7 +646,7 @@ struct SettingsTabView: View {
         settings.deploymentAddress = coords.address
         latText = String(format: "%.6f", coords.lat)
         lngText = String(format: "%.6f", coords.lon)
-        locationSearch.clearQuery()
+        locationSearch.setDisplayAddress(coords.address)
     }
 
     @ViewBuilder

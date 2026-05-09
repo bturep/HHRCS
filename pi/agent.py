@@ -32,6 +32,27 @@ _AGENT_LOG_PATH = os.path.join(_DATA_DIR, "agent_log.json")
 _LOG_LOCK       = threading.Lock()
 _MAX_ENTRIES    = 200
 
+_CONTEXT_MD_PATH  = os.path.join(_HHRCS_DIR, "CONTEXT.md")
+_context_md_text  = ""
+_context_md_mtime = 0.0
+
+
+def _load_context_md() -> str:
+    global _context_md_text, _context_md_mtime
+    try:
+        mtime = os.path.getmtime(_CONTEXT_MD_PATH)
+        if mtime != _context_md_mtime:
+            with open(_CONTEXT_MD_PATH, encoding="utf-8") as f:
+                _context_md_text = f.read()
+            _context_md_mtime = mtime
+            log.info(f"CONTEXT.md loaded ({len(_context_md_text)} chars)")
+    except Exception as e:
+        log.warning(f"Could not read CONTEXT.md: {e}")
+    return _context_md_text
+
+
+_load_context_md()
+
 
 def init(detector, sm, camera):
     global _detector, _sm, _camera
@@ -326,11 +347,17 @@ def query_agent(question: str) -> dict:
                 f"\nQuery: {question}"
             )
 
+            context_md = _load_context_md()
+            context_prefix = (
+                f"PROJECT CONTEXT (CONTEXT.md):\n{context_md}\n\n---\n\n"
+                if context_md else ""
+            )
             client  = anthropic.Anthropic(api_key=api_key)
             message = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=512,
                 system=(
+                    f"{context_prefix}"
                     "You are the field intelligence for HHRCS, a remote wildlife camera system. "
                     "You have access to real-time sensor readings, detection history, system "
                     "state, and environmental conditions.\n\n"

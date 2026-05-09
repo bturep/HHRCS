@@ -31,6 +31,16 @@ final class LocationSearchViewModel: NSObject, ObservableObject {
         DispatchQueue.main.async { [weak self] in self?.suppressNextClearConfirmation = false }
     }
 
+    /// Set the display text to a resolved address without triggering a new search.
+    func setDisplayAddress(_ address: String) {
+        suppressNextClearConfirmation = true
+        query       = address   // didSet fires scheduleSearch() which sets debounceTask
+        debounceTask?.cancel()  // cancel before the 0.3s delay fires
+        results     = []
+        isSearching = false
+        suppressNextClearConfirmation = false
+    }
+
     /// Resolve a completion to coordinates + formatted address string.
     func select(_ completion: MKLocalSearchCompletion) async -> (lat: Double, lon: Double, address: String)? {
         let req = MKLocalSearch.Request(completion: completion)

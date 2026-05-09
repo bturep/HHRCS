@@ -313,6 +313,15 @@ def _ssd_free_pct() -> float:
         return 0.0
 
 
+def _pi_sd_used_pct() -> float:
+    try:
+        import shutil as _shutil
+        u = _shutil.disk_usage("/")
+        return round(u.used / u.total * 100, 1) if u.total > 0 else 0.0
+    except Exception:
+        return 0.0
+
+
 def _get_external_drives() -> list:
     import shutil as _shutil
     drives = []
@@ -394,7 +403,6 @@ def status():
         "cam_active_media_slot":     cam_state["cam_active_media_slot"],
         "cam_remaining_record_time": cam_state["cam_remaining_record_time"],
         "cam_shutter_angle":         cam_state["cam_shutter_angle"],
-        "cam_battery":               cam_state["cam_battery"],
         "cam_lens":                  cam_state["cam_lens"],
         "cam_codec_variant":         cam_state["cam_codec_variant"],
         "cam_format_details":        cam_state["cam_format_details"],
@@ -410,6 +418,7 @@ def status():
         "machine_state":       sm_data["state"],
         "ssd_mounted":         os.path.ismount(config.ssd_mount),
         "ssd_free_pct":        _ssd_free_pct(),
+        "pi_sd_used_pct":      _pi_sd_used_pct(),
 
         "storage": storage_monitor.get_storage_stats(),
 

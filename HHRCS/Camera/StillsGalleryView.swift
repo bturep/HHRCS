@@ -3,6 +3,8 @@ import SwiftUI
 struct StillsGalleryView: View {
     @EnvironmentObject var vm: DataViewModel
 
+    @State private var pendingDelete: CapturedStill? = nil
+
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "dd MMM HH:mm:ss"
@@ -16,20 +18,42 @@ struct StillsGalleryView: View {
     ]
 
     var body: some View {
-        if vm.stills.isEmpty {
-            emptyState
-        } else {
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(vm.stills) { still in
-                        StillCell(still: still, timeFormatter: Self.timeFormatter) {
-                            vm.stills.removeAll { $0.id == still.id }
+        ZStack {
+            if vm.stills.isEmpty {
+                emptyState
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(vm.stills) { still in
+                            StillCell(still: still, timeFormatter: Self.timeFormatter,
+                                      onRequestDelete: { pendingDelete = still }) {
+                                vm.stills.removeAll { $0.id == still.id }
+                            }
                         }
                     }
+                    .padding(Theme.pagePadding)
                 }
-                .padding(Theme.pagePadding)
+                .background(Theme.background)
             }
-            .background(Theme.background)
+
+            if let still = pendingDelete {
+                Color.black.opacity(0.30)
+                    .ignoresSafeArea()
+                    .onTapGesture { pendingDelete = nil }
+
+                ConfirmationCard(
+                    title:        "DELETE STILL?",
+                    message:      "This cannot be undone.",
+                    confirmLabel: "DELETE",
+                    onConfirm: {
+                        pendingDelete = nil
+                        vm.stills.removeAll { $0.id == still.id }
+                    },
+                    onCancel: { pendingDelete = nil }
+                )
+                .frame(maxWidth: 280)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
     }
 
@@ -53,10 +77,10 @@ struct StillsGalleryView: View {
 private struct StillCell: View {
     let still: CapturedStill
     let timeFormatter: DateFormatter
+    let onRequestDelete: () -> Void
     let onDelete: () -> Void
 
-    @State private var showDeleteConfirm = false
-    @State private var showFullscreen    = false
+    @State private var showFullscreen = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -70,7 +94,7 @@ private struct StillCell: View {
                         #if os(iOS)
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         #endif
-                        showDeleteConfirm = true
+                        onRequestDelete()
                     }
 
                 Text(still.sourceLabel)
@@ -111,17 +135,6 @@ private struct StillCell: View {
             }
         }
         #endif
-        .overlay {
-            if showDeleteConfirm {
-                ConfirmationCard(
-                    title:        "DELETE STILL?",
-                    message:      "This cannot be undone.",
-                    confirmLabel: "DELETE",
-                    onConfirm:    { showDeleteConfirm = false; onDelete() },
-                    onCancel:     { showDeleteConfirm = false }
-                )
-            }
-        }
     }
 
     @ViewBuilder

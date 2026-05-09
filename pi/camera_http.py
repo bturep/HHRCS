@@ -202,7 +202,8 @@ class BMPCCCameraClient:
         try:
             media = self.get_active_media()
             if media:
-                raw = media.get("deviceName") or media.get("slot")
+                # Use deviceName only — empty deviceName means no media in active slot
+                raw = media.get("deviceName") or None
                 result["cam_active_media_slot"] = _SLOT_MAP.get(raw, raw) if raw else None
                 remaining = media.get("remainingRecordTime")
                 if remaining is not None:

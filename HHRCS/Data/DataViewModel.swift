@@ -178,6 +178,7 @@ final class DataViewModel: ObservableObject {
     @Published var healthIsRecording:          Bool    = false
     @Published var healthSsdMounted:           Bool    = false
     @Published var healthSsdFreePct:           Double  = 0
+    @Published var piSdUsedPct:               Double? = nil
     @Published var healthDetectLastAgoSec:     Double? = nil
     @Published var healthLastPollAt:           Date?   = nil
     @Published var healthLastError:            String? = nil
@@ -352,6 +353,7 @@ final class DataViewModel: ObservableObject {
         let yoloSimMode:                 Bool?
         let ssdMounted:                  Bool?
         let ssdFreePct:                  Double?
+        let piSdUsedPct:                 Double?
         let detectorLastInferenceAgoSec: Double?
         let detectorThreshold:           Double?
         let detectorFpsActual:           Double?
@@ -396,6 +398,7 @@ final class DataViewModel: ObservableObject {
             case yoloSimMode                 = "yolo_sim_mode"
             case ssdMounted                  = "ssd_mounted"
             case ssdFreePct                  = "ssd_free_pct"
+            case piSdUsedPct                 = "pi_sd_used_pct"
             case detectorLastInferenceAgoSec = "detector_last_inference_ago_seconds"
             case detectorThreshold           = "detector_threshold"
             case detectorFpsActual           = "detector_fps_actual"
@@ -510,6 +513,7 @@ final class DataViewModel: ObservableObject {
             healthIsRecording        = poll.recording            ?? false
             healthSsdMounted         = poll.ssdMounted           ?? false
             healthSsdFreePct         = poll.ssdFreePct           ?? 0
+            piSdUsedPct              = poll.piSdUsedPct
             healthDetectLastAgoSec   = poll.detectorLastInferenceAgoSec
             healthLastPollAt         = Date()
             healthLastError          = nil

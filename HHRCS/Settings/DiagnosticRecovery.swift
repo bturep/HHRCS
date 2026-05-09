@@ -3,6 +3,31 @@ import SwiftUI
 import UIKit
 #endif
 
+// ── Diagnostic dot → /status field → threshold mapping ──────────────────────
+//
+// PI      healthPiReachable      TCP poll success → green; failure → red
+//
+// BMPCC   camReachable           cam_reachable → green/red; grey if PI down
+//
+// CAM     healthPiReachable      Pi reachable implies Pi Camera Module 3 active
+//                                green if PI up, grey if PI down
+//
+// YOLO    healthYoloRunning      yolo_running → green/red; grey if PI down
+//
+// HDMI    hdmiReachable          hdmi_reachable → green/red; grey if PI down
+//
+// PI SD   piSdUsedPct            pi_sd_used_pct (df on "/" = microSD boot disk)
+//                                <80% → green; 80–95% → yellow; >95% → red; grey if PI down
+//
+// CAM SD  camActiveMediaSlot     cam_active_media_slot (workingset activeDisk entry)
+//                                contains "sd" → green; else → grey
+//                                remaining time shown only when SD is active slot
+//
+// CAM CF  camActiveMediaSlot     cam_active_media_slot (same field)
+//                                contains "cfast"/"cf" → green; else → grey
+//                                remaining time shown only when CF is active slot
+// ────────────────────────────────────────────────────────────────────────────
+
 // MARK: – Panel state machine
 
 enum DiagnosticPanelMode: Equatable {
@@ -364,26 +389,22 @@ struct YoloDetailView: View {
     }
 }
 
-// MARK: – PI SD detail (was SsdDetailView)
+// MARK: – PI SD detail (Pi microSD boot disk)
 
 struct PiSdDetailView: View {
     @EnvironmentObject var vm: DataViewModel
 
     var body: some View {
         VStack(spacing: 0) {
-            diagRow("STATUS",
-                    value:      vm.healthSsdMounted ? "Mounted" : "Not mounted",
-                    valueColor: vm.healthSsdMounted ? Theme.ok : Theme.dotRed)
-            HRule()
-            diagRow("FREE",
-                    value:      vm.healthSsdMounted ? String(format: "%.1f%%", vm.healthSsdFreePct) : "—",
-                    valueColor: ssdFreeColor)
-            HRule()
-            diagRow("STORAGE",
-                    value:      vm.healthSsdMounted ? String(format: "%.1f GB", vm.ssdRemainingGB) : "—",
+            diagRow("DEVICE",
+                    value:      "Pi microSD (boot, /)",
                     valueColor: Theme.secondary)
             HRule()
-            Text("PHYSICAL ACCESS REQUIRED FOR REMOUNTING")
+            diagRow("USED",
+                    value:      vm.piSdUsedPct.map { String(format: "%.1f%%", $0) } ?? "—",
+                    valueColor: piSdColor)
+            HRule()
+            Text("WRITE WORKLOAD: METRICS · EVENTS · MODEL · LOGS")
                 .font(.system(size: 9, weight: .regular, design: .monospaced))
                 .tracking(1.0)
                 .foregroundStyle(Theme.tertiary)
@@ -392,10 +413,10 @@ struct PiSdDetailView: View {
         }
     }
 
-    private var ssdFreeColor: Color {
-        guard vm.healthSsdMounted else { return Theme.tertiary }
-        if vm.healthSsdFreePct < 5  { return Theme.dotRed }
-        if vm.healthSsdFreePct < 10 { return Theme.dotAmber }
+    private var piSdColor: Color {
+        guard let used = vm.piSdUsedPct else { return Theme.tertiary }
+        if used > 95 { return Theme.dotRed }
+        if used > 80 { return Theme.dotAmber }
         return Theme.ok
     }
 }
@@ -412,6 +433,12 @@ struct CamSdDetailView: View {
                     value:      isActive ? "Yes" : "No",
                     valueColor: isActive ? Theme.text1 : Theme.secondary)
             HRule()
+            if isActive {
+                diagRow("REMAINING",
+                        value:      vm.camRemainingRecordTime.map { "\($0 / 60)m \($0 % 60)s" } ?? "—",
+                        valueColor: Theme.secondary)
+                HRule()
+            }
             diagRow("SLOT",   value: "SD Card (Slot 2)", valueColor: Theme.secondary)
             HRule()
             Text("PHYSICAL ACCESS REQUIRED FOR MEDIA SWAP")
@@ -431,16 +458,18 @@ struct CamCfDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            let isActive = vm.camActiveMediaSlot.lowercased().contains("cfast") ||
-                           vm.camActiveMediaSlot.lowercased().contains("cf")
+            let slot = vm.camActiveMediaSlot.lowercased()
+            let isActive = slot.contains("cfast") || slot.contains("cf")
             diagRow("ACTIVE",
                     value:      isActive ? "Yes" : "No",
                     valueColor: isActive ? Theme.text1 : Theme.secondary)
             HRule()
-            diagRow("REMAINING",
-                    value:      vm.camRemainingRecordTime.map { "\($0 / 60)m \($0 % 60)s" } ?? "—",
-                    valueColor: Theme.secondary)
-            HRule()
+            if isActive {
+                diagRow("REMAINING",
+                        value:      vm.camRemainingRecordTime.map { "\($0 / 60)m \($0 % 60)s" } ?? "—",
+                        valueColor: Theme.secondary)
+                HRule()
+            }
             diagRow("SLOT",   value: "CFast 2.0 (Slot 1)", valueColor: Theme.secondary)
             HRule()
             Text("PHYSICAL ACCESS REQUIRED FOR MEDIA SWAP")

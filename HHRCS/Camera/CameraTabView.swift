@@ -80,10 +80,10 @@ struct CameraTabView: View {
                 case .live:
                     OperatorControlRow(
                         isOwner: settings.ownerModeEnabled,
-                        recordingState: vm.isPiCamRecording ? .recording : .idle,
+                        recordingState: .idle,
                         captureIsPlaceholder: false,
-                        recordDisabled: true,
-                        onRecord: { vm.togglePiCamRecord() },
+                        showRecord: false,
+                        onRecord: {},
                         onCapture: { Task { await vm.captureStill() } }
                     ) { pageIndicator }
                 }
@@ -351,7 +351,7 @@ private struct OperatorControlRow<Indicator: View>: View {
     let isOwner: Bool
     var recordingState: RecordingState = .idle
     let captureIsPlaceholder: Bool
-    var recordDisabled: Bool = false
+    var showRecord: Bool = true
     let onRecord: () -> Void
     let onCapture: () -> Void
     @ViewBuilder let indicator: () -> Indicator
@@ -362,28 +362,16 @@ private struct OperatorControlRow<Indicator: View>: View {
     var body: some View {
         ZStack {
             HStack(spacing: 0) {
-                Group {
-                    if isOwner {
-                        if recordDisabled {
-                            VStack(spacing: 2) {
-                                Image(systemName: "record.circle")
-                                    .symbolRenderingMode(.monochrome)
-                                    .font(.system(size: 22))
-                                    .foregroundStyle(Theme.tertiary.opacity(0.4))
-                                Text("PROXY RECORDING — PLANNED")
-                                    .font(.system(size: 7, weight: .regular, design: .monospaced))
-                                    .foregroundStyle(Theme.tertiary)
-                                    .multilineTextAlignment(.center)
-                            }
-                            .allowsHitTesting(false)
-                        } else {
+                if showRecord {
+                    Group {
+                        if isOwner {
                             recordButton
+                        } else {
+                            Color.clear
                         }
-                    } else {
-                        Color.clear
                     }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
 
                 Color.clear.frame(maxWidth: .infinity)
                 Color.clear.frame(maxWidth: .infinity)
