@@ -1,15 +1,6 @@
 """
 Wildlife detector — Pi Camera Module 3 + MegaDetectorLite ONNX (md_v1000_spruce).
-Falls back to simulated detections if hardware/packages are unavailable.
-
 Detection triggers callback(class_name) for any detected target class.
-
-NOTE: This is the emit-instrumented version of the Pi detector.
-If the Pi's detector.py has been updated since this was generated, apply the
-events import and _dispatch() emit call to the current Pi version manually.
-The only additions are:
-  1.  from events import emit as _emit  (try/except guarded)
-  2.  _emit("detector.trigger", {...}) in _dispatch() before self.callback()
 """
 
 import collections
@@ -17,7 +8,6 @@ import json
 import os
 import threading
 import logging
-import random
 import time
 from datetime import datetime, timezone
 from typing import Callable, List, Optional
@@ -43,9 +33,6 @@ except ImportError:
         pi_cam_resolution = (1280, 720)
         pi_cam_sensor_mode = (2304, 1296)
     _config = _FallbackConfig()
-
-_CLASSES = ["deer", "rabbit", "bird"]
-_WEIGHTS = [0.45, 0.30, 0.25]
 
 _picamera2_available = False
 _onnx_available = False
@@ -111,18 +98,14 @@ class Detector:
         self._latest_frame = None  # raw capture array, shared between capture thread and inference
         self._last_inference_time: float | None = None
 
-        # Respect DETECTOR_ENABLED env var OR a .sim_mode flag file (either forces simulation)
         _env_enabled = os.environ.get("DETECTOR_ENABLED", "1") != "0"
-        _flag_file   = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".sim_mode")
-        _flag_enabled = not os.path.exists(_flag_file)
-        self._using_real = _picamera2_available and _onnx_available and _env_enabled and _flag_enabled
+        self._using_real = _picamera2_available and _onnx_available and _env_enabled
 
     def start(self):
         self._running = True
-        target = self._real_loop if self._using_real else self._sim_loop
-        self._thread = threading.Thread(target=target, daemon=True, name="detector")
+        self._thread = threading.Thread(target=self._real_loop, daemon=True, name="detector")
         self._thread.start()
-        log.info(f"Detector started ({'MegaDetectorLite ONNX' if self._using_real else 'simulation'})")
+        log.info(f"Detector started ({'MegaDetectorLite ONNX' if self._using_real else 'hardware unavailable — standby'})")
 
     def stop(self):
         self._running = False
@@ -190,6 +173,8 @@ class Detector:
             t0 = time.time()
             opts = ort.SessionOptions()
             opts.intra_op_num_threads = 3   # Pi 4 has 4 cores; leaves 1 for system/Flask/capture
+            # Benchmark 2026-05-08: 2 threads → 1.459fps mean / 686ms/frame (every frame over 600ms budget);
+            # cpu_pct 83.6% (target <80% not met); thermal delta only 0.7°C. Reverted to 3.
             opts.inter_op_num_threads = 1
             opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
             opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
@@ -206,8 +191,7 @@ class Detector:
             threading.Thread(target=self._camera_stream_loop, daemon=True, name="cam-stream").start()
 
         except Exception as e:
-            log.error(f"Camera/model init failed ({e}) — falling back to simulation")
-            self._sim_loop()
+            log.error(f"Camera/model init failed ({e}) — detector thread exiting")
             return
 
         input_name = self._session.get_inputs()[0].name
@@ -375,74 +359,20 @@ class Detector:
             time.sleep(0.1)
 
     def _camera_stream_loop(self):
-        """JPEG encoding for /stream. Real mode: reads _latest_frame from capture thread.
-        Sim mode: opens own Picamera2 instance (inference camera not available)."""
+        """JPEG encoding for /stream — reads _latest_frame from capture thread."""
         import io
         from PIL import Image
 
-        if self._using_real:
-            log.info("Camera stream started (real mode, reads shared capture thread)")
-            while self._running:
-                frame = self._latest_frame
-                if frame is not None:
-                    try:
-                        img = Image.fromarray(frame[:, :, ::-1])
-                        buf = io.BytesIO()
-                        img.save(buf, format="JPEG", quality=70)
-                        with self._frame_lock:
-                            self._latest_jpeg = buf.getvalue()
-                    except Exception as e:
-                        log.warning(f"Stream encode error: {e}")
-                time.sleep(0.1)
-            return
-
-        # Sim mode: no inference camera open — open dedicated stream camera
-        if not _picamera2_available:
-            return
-        cam = None
-        try:
-            cam = Picamera2()
-            cfg = cam.create_video_configuration(
-                main={"size": _config.pi_cam_resolution, "format": "RGB888"},
-                raw={"size": _config.pi_cam_sensor_mode},
-            )
-            cam.configure(cfg)
-            cam.start()
-            time.sleep(2)
-            log.info(f"Camera stream started (sim mode, {_config.pi_cam_resolution[0]}x{_config.pi_cam_resolution[1]}, ~10 fps)")
-            while self._running:
+        log.info("Camera stream started (reads shared capture thread)")
+        while self._running:
+            frame = self._latest_frame
+            if frame is not None:
                 try:
-                    frame = cam.capture_array()
                     img = Image.fromarray(frame[:, :, ::-1])
                     buf = io.BytesIO()
                     img.save(buf, format="JPEG", quality=70)
                     with self._frame_lock:
                         self._latest_jpeg = buf.getvalue()
                 except Exception as e:
-                    log.warning(f"Camera stream frame error: {e}")
-                time.sleep(0.1)
-        except Exception as e:
-            log.error(f"Camera stream init failed: {e}")
-        finally:
-            if cam:
-                try:
-                    cam.stop()
-                except Exception:
-                    pass
-
-    def _sim_loop(self):
-        log.info("Simulated detector running")
-        if _picamera2_available:
-            t = threading.Thread(target=self._camera_stream_loop, daemon=True, name="cam-stream")
-            t.start()
-        while self._running:
-            interval = random.uniform(8, 40)
-            time.sleep(interval)
-            if self._running:
-                cls = random.choices(_CLASSES, weights=_WEIGHTS)[0]
-                conf = random.uniform(0.55, 0.92)
-                bbox = [random.uniform(0.1, 0.4), random.uniform(0.1, 0.4),
-                        random.uniform(0.5, 0.9), random.uniform(0.5, 0.9)]
-                frame_ts = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-                log.debug(f"Sim detection: {cls}")
-                self._dispatch(cls, conf, bbox, frame_ts)
+                    log.warning(f"Stream encode error: {e}")
+            time.sleep(0.1)

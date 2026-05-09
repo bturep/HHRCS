@@ -103,18 +103,23 @@ try:
 except Exception as _e:
     log.warning(f"Could not load persisted threshold: {_e}")
 
+_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "data", "settings.json")
+try:
+    if os.path.exists(_SETTINGS_FILE):
+        with open(_SETTINGS_FILE) as _sf:
+            _saved_settings = json.load(_sf)
+            config.dawn_dusk_enabled = bool(_saved_settings.get("dawn_dusk_enabled", config.dawn_dusk_enabled))
+except Exception as _e:
+    log.warning(f"Could not load settings: {_e}")
+
 emit("system.startup", {"subsystem": "api_server"})
 
 
 def _on_record_start(trigger):
     global _current_clip_id, _camera_started
     _sensors_start()
-    if trigger == TriggerType.MANUAL or detector._using_real:
-        camera.record_start()
-        _camera_started = True
-    else:
-        _camera_started = False
-        log.info(f"Sim mode — skipping camera.record_start (trigger={trigger})")
+    camera.record_start()
+    _camera_started = True
     _current_clip_id = datetime.now().strftime("hhrcs_%Y%m%d_%H%M%S")
     dep = deployment.get_active_deployment()
     base = (Path(__file__).parent / "deployments" / dep["id"] / "clips" / _current_clip_id
@@ -132,11 +137,8 @@ def _on_record_start(trigger):
 def _on_record_stop(elapsed):
     global _current_clip_id, _camera_started
     _sensors_stop()
-    if _camera_started:
-        camera.record_stop()
-        _camera_started = False
-    else:
-        log.info("Sim mode — skipping camera.record_stop")
+    camera.record_stop()
+    _camera_started = False
 
     lux = read_lux()
     emit("recording.stopped", {
@@ -182,6 +184,9 @@ detector = Detector(
     fps=config.detection_fps,
     resolution=config.detection_resolution,
 )
+if not config.dawn_dusk_enabled:
+    sm.open_window(TriggerType.SCHEDULED)
+    log.info("dawn/dusk disabled — recording window opened at startup")
 detector.start()
 agent.init(detector, sm, camera)
 notifier.start()
@@ -228,26 +233,31 @@ def _schedule_windows():
 
         while True:
             try:
-                s = sun(loc.observer, date=date.today(), tzinfo=tz)
-                now = datetime.now(tz)
-
-                from datetime import timedelta
-                dawn_open  = s["dawn"]  + timedelta(minutes=config.dawn_offset_minutes)
-                dawn_close = s["sunrise"] + timedelta(minutes=config.dawn_close_minutes)
-                dusk_open  = s["sunset"] + timedelta(minutes=config.dusk_open_minutes)
-                dusk_close = s["dusk"]  + timedelta(minutes=config.dusk_close_minutes)
-
-                in_dawn = dawn_open <= now <= dawn_close
-                in_dusk = dusk_open <= now <= dusk_close
-
-                if in_dawn or in_dusk:
+                if not config.dawn_dusk_enabled:
                     if not sm.window_open:
                         sm.open_window(TriggerType.SCHEDULED)
-                        log.info(f"Scheduled window opened ({'dawn' if in_dawn else 'dusk'})")
+                        log.info("dawn/dusk disabled — re-opened window")
                 else:
-                    if sm.window_open and sm.trigger_type == TriggerType.SCHEDULED:
-                        sm.close_window()
-                        log.info("Scheduled window closed")
+                    s = sun(loc.observer, date=date.today(), tzinfo=tz)
+                    now = datetime.now(tz)
+
+                    from datetime import timedelta
+                    dawn_open  = s["dawn"]  + timedelta(minutes=config.dawn_offset_minutes)
+                    dawn_close = s["sunrise"] + timedelta(minutes=config.dawn_close_minutes)
+                    dusk_open  = s["sunset"] + timedelta(minutes=config.dusk_open_minutes)
+                    dusk_close = s["dusk"]  + timedelta(minutes=config.dusk_close_minutes)
+
+                    in_dawn = dawn_open <= now <= dawn_close
+                    in_dusk = dusk_open <= now <= dusk_close
+
+                    if in_dawn or in_dusk:
+                        if not sm.window_open:
+                            sm.open_window(TriggerType.SCHEDULED)
+                            log.info(f"Scheduled window opened ({'dawn' if in_dawn else 'dusk'})")
+                    else:
+                        if sm.window_open and sm.trigger_type == TriggerType.SCHEDULED:
+                            sm.close_window()
+                            log.info("Scheduled window closed")
             except Exception as e:
                 log.error(f"Scheduler error: {e}")
 
@@ -301,6 +311,26 @@ def _ssd_free_pct() -> float:
         return round(u.free / u.total * 100, 1) if u.total > 0 else 0.0
     except Exception:
         return 0.0
+
+
+def _get_external_drives() -> list:
+    import shutil as _shutil
+    drives = []
+    try:
+        for entry in os.scandir("/media"):
+            if entry.is_dir() and os.path.ismount(entry.path) and entry.path != config.ssd_mount:
+                try:
+                    u = _shutil.disk_usage(entry.path)
+                    drives.append({
+                        "name":        entry.name,
+                        "used_bytes":  u.used,
+                        "total_bytes": u.total,
+                    })
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return drives
 
 # ── /status ────────────────────────────────────────────────────────────────────
 
@@ -363,23 +393,31 @@ def status():
         "cam_gain":                  cam_state["cam_gain"],
         "cam_active_media_slot":     cam_state["cam_active_media_slot"],
         "cam_remaining_record_time": cam_state["cam_remaining_record_time"],
+        "cam_shutter_angle":         cam_state["cam_shutter_angle"],
+        "cam_battery":               cam_state["cam_battery"],
+        "cam_lens":                  cam_state["cam_lens"],
+        "cam_codec_variant":         cam_state["cam_codec_variant"],
+        "cam_format_details":        cam_state["cam_format_details"],
 
         "hardware_lux": sensor_data.get("hardware_lux", False),
         "hardware_env": sensor_data.get("hardware_env", False),
 
         "detector_last_inference_ago_seconds": detector.last_inference_ago_seconds,
 
-        "yolo_running":       bool(detector._thread and detector._thread.is_alive()),
-        "yolo_sim_mode":      not detector._using_real,
-        "detector_threshold": config.detector_confidence_threshold,
+        "yolo_running":        bool(detector._thread and detector._thread.is_alive()),
+        "detector_threshold":  config.detector_confidence_threshold,
         "detector_fps_actual": detector.get_fps_actual(),
-        "machine_state":      sm_data["state"],
-        "ssd_mounted":     os.path.ismount(config.ssd_mount),
-        "ssd_free_pct":    _ssd_free_pct(),
+        "machine_state":       sm_data["state"],
+        "ssd_mounted":         os.path.ismount(config.ssd_mount),
+        "ssd_free_pct":        _ssd_free_pct(),
 
         "storage": storage_monitor.get_storage_stats(),
 
+        "external_drives": _get_external_drives(),
+
         "hdmi_reachable": _hdmi.is_open() if _hdmi else False,
+
+        "dawn_dusk_enabled": config.dawn_dusk_enabled,
 
         # Deployment scope
         **_deployment_status_fields(),
@@ -823,6 +861,29 @@ def detector_threshold():
     except Exception as e:
         log.warning(f"Could not persist threshold: {e}")
     return jsonify({"ok": True, "value": value})
+
+
+def _save_settings():
+    try:
+        os.makedirs(os.path.dirname(_SETTINGS_FILE), exist_ok=True)
+        with open(_SETTINGS_FILE, "w") as f:
+            json.dump({"dawn_dusk_enabled": config.dawn_dusk_enabled}, f)
+    except Exception as e:
+        log.warning(f"Could not save settings: {e}")
+
+
+@app.route("/settings/dawn_dusk", methods=["POST"])
+def settings_dawn_dusk():
+    data = request.json or {}
+    enabled = data.get("enabled")
+    if not isinstance(enabled, bool):
+        return jsonify({"error": "enabled (bool) required"}), 400
+    config.dawn_dusk_enabled = enabled
+    _save_settings()
+    if not enabled and not sm.window_open:
+        sm.open_window(TriggerType.SCHEDULED)
+        log.info("dawn/dusk disabled via API — window opened")
+    return jsonify({"ok": True, "dawn_dusk_enabled": enabled, "window_open": sm.window_open})
 
 
 @app.route("/notifier/test", methods=["POST"])

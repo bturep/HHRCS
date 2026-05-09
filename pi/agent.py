@@ -264,7 +264,11 @@ def query_agent(question: str) -> dict:
     except Exception:
         pass
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    try:
+        from config import config as _cfg
+        api_key = (os.environ.get("ANTHROPIC_API_KEY", "") or _cfg.agent_api_key).strip()
+    except Exception:
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     response_text = None
     entry_type    = "query"
 

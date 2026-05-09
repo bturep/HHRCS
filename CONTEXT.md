@@ -61,7 +61,7 @@ ExportOptions.plist     For future ad-hoc signed builds (requires paid Apple acc
 | FEED images | 5s still polling (StillPoller); no MJPEG streaming. One poller runs at a time. |
 | Fake data | Disabled — stills and session log start empty |
 | Signing | Unsigned IPA → Sideloadly (free Apple ID, 7-day expiry) |
-| Diagnostic dots | PI · CAM · YOLO · CARD · SSD |
+| Diagnostic dots | PI · BMPCC · CAM · YOLO · HDMI ‖ PI SD · CAM SD · CAM CF |
 
 ---
 
@@ -74,33 +74,32 @@ ExportOptions.plist     For future ad-hoc signed builds (requires paid Apple acc
 | SSH | `ssh pi@raspberrypi.local` password: `hhrcs2026` |
 | ONNX model | `models/md_v1000_spruce.onnx` (28.3 MB, MegaDetectorLite, **416×416 input** as of Part 6) |
 | Inference threads | `intra_op_num_threads=3`, `ORT_SEQUENTIAL` (Pi 4 has 4 cores; leaves 1 for system/Flask/capture) |
+| Cooling | Fan attached to 5V/GND GPIO header — installed and running throughout May 8 benchmark session |
 | Pi eth0 | `192.168.10.1/24` (static, NetworkManager con-name "camlink") |
 | BMPCC eth | `192.168.10.2/24` (via USB-C ethernet adapter on camera) |
 | REST API base | `http://192.168.10.2/control/api/v1` |
+
+**Thermal baseline (with active cooling):** 41.2°C mean / 42.8°C peak under sustained 3-thread inference load (199 samples, 2026-05-08). Prior crashes (Apr 19, Apr 21) occurred on bare Pi with no cooling. With fan installed, the 42.8°C ceiling gives adequate headroom for sealed Pelican deployment.
 
 ---
 
 ## Detector Real-Mode Gating
 
-`detector.py` sets `_using_real = True` only when **all four** conditions are met at startup:
+`detector.py` sets `_using_real = True` only when **all three** conditions are met at startup:
 
 1. `picamera2` is importable (Pi camera library present)
 2. `onnxruntime` is importable (ONNX inference library present)
 3. `DETECTOR_ENABLED` env var is **unset** OR its value is not `"0"`
-4. The flag file `/home/pi/hhrcs/.sim_mode` does **NOT exist**
 
-If any condition fails, the detector falls back to simulation mode (`_using_real = False`), which emits fake detections on a timer without running inference.
+If any condition fails, the detector starts but sits idle (thread exits after logging the error). Simulation mode has been removed entirely.
 
-**To switch between modes:**
+**To disable inference:**
 ```bash
-# Force simulation mode
-touch /home/pi/hhrcs/.sim_mode
+# Disable via env var (set in hhrcs.service Environment= line)
+DETECTOR_ENABLED=0
 
-# Force real inference mode
-rm -f /home/pi/hhrcs/.sim_mode
-
-# Check current mode via API
-curl -s http://raspberrypi.local:5001/status | python3 -m json.tool | grep yolo_sim_mode
+# Verify status via API
+curl -s http://raspberrypi.local:5001/status | python3 -m json.tool | grep yolo_running
 ```
 
 **Model rollback (416 → 640):** If accuracy regresses, the 640 model is preserved:
@@ -145,7 +144,7 @@ ssh pi@raspberrypi.local "mv /home/pi/hhrcs/models/md_v1000_spruce_640.onnx.bak 
 - [ ] Power budget confirmed (Pi + BMPCC + camera + capture card at idle/active load)
 - [ ] Weatherproofing: Pelican 1510 cable routing, desiccant, condensation plan
 - [ ] Cellular fallback at remote site (mobile hotspot, LTE hat, or Starlink Mini). Tailscale relies on at least one network path reaching the Pi from the internet — without WiFi or cellular at the deploy site, the system is local-only.
-- [ ] Active cooling installed (heatsink-fan case — required for sealed enclosure; bare Pi 4 will overheat)
+- [x] Active cooling installed: fan on 5V/GND GPIO header, running throughout May 8 benchmark (42.8°C peak at 3-thread load — adequate for Pelican)
 - [ ] Cellular fallback: Tailscale confirmed reachable over mobile hotspot from deployment site
 - [ ] Media capacity: CFast/SSD sized for full deployment window at BRAW 12:1 65 MB/s
 
@@ -202,13 +201,18 @@ Pi HDMI endpoints (base: `http://raspberrypi.local:5001`):
 
 ## Diagnostic Dots (iOS Settings tab)
 
-| Dot | Green | Red | Detail panel |
-|-----|-------|-----|--------------|
+Two rows: connectivity (5 dots) · separator · storage (3 dots).
+
+| Dot | Green | Red/Grey | Detail panel |
+|-----|-------|----------|--------------|
 | PI | Pi reachable | Pi unreachable | Last poll time |
-| CAM | Camera REST API reachable | Unreachable | Format, ISO, WB, recovery flow |
-| YOLO | Detector running | Not running | Inference mode, reset flow |
-| CARD | Active media slot present | No media | Slot name, remaining time |
-| SSD | ≥10% free | <5% free | Free %, GB remaining |
+| BMPCC | BMPCC REST API reachable | Unreachable | Format, ISO, WB, recording, recovery flow |
+| CAM | Pi Camera Module 3 stream active | Pi unreachable | Module name, stream status |
+| YOLO | Detector running | Not running | Inference status, reset flow |
+| HDMI | HDMI capture card streaming | Offline | Device, format, capture info |
+| PI SD | SSD ≥10% free | Not mounted / <5% free | Mount status, free %, GB |
+| CAM SD | BMPCC SD slot active | Inactive / BMPCC unreachable | Slot active, label |
+| CAM CF | BMPCC CFast slot active | Inactive / BMPCC unreachable | Slot active, remaining rec time |
 
 ---
 
@@ -353,6 +357,26 @@ Pi-only; iOS untouched. Pre-flight confirmed Mac and Pi `detector.py` copies alr
 **2026-05-07 — Detector real-mode bring-up: post-deployment fixes and status (Part 4)**
 Real inference confirmed functional end-to-end. First detection: `animal conf=0.77` at `2026-05-07T19:00:24 UTC`. Gating: real mode requires picamera2 importable + onnxruntime importable + `DETECTOR_ENABLED` not `"0"` + `/home/pi/hhrcs/.sim_mode` file absent. Removed `.sim_mode` today to enable real inference. Two bugs found and fixed: (1) `detector.py:213` — `config.detector_confidence_threshold` should be `_config.detector_confidence_threshold` (Pi was patched via `sed -i`; Mac copy fixed and committed here). (2) `detections.jsonl` write failed with `float32 not JSON serializable` — numpy float32 bbox/confidence values not castable by `json.dumps()`; fixed by wrapping with `float()` before `round()`. Known open issues: inference is ~1600ms/frame (target 500ms, 0.53 actual fps vs 2.0 target) — thermal ruled out (CPU 37.9°C); root cause unknown, likely input resolution or onnxruntime config. iOS sim mode toggle is cosmetic only — does not affect the Pi; fix deferred.
 
+**2026-05-08 — intra_op_num_threads benchmark: 3 vs 2 (Part 6)**
+Pi-only; no file changes committed (thread count stays at 3). Benchmark run: 3-thread baseline from 199 metric samples (3h 23m session); 2-thread test from 10 metric samples (10 min) after live swap. Results:
+
+| Metric | 3 threads (baseline) | 2 threads (test) | Delta |
+|---|---|---|---|
+| fps mean | 1.686 | 1.459 | −0.227 (−13.5%) |
+| fps min | 1.5 | 1.4 | right at floor |
+| inf_ms mean | 594 ms | 686 ms | +92 ms/frame |
+| cpu_pct mean | 95.5% | 83.6% | −11.9 pp |
+| cpu_pct max | 100% | 85.4% | — |
+| temp mean | 41.2°C | 40.5°C | −0.7°C |
+
+Decision: **reverted to 3 threads.** (1) 2-thread fps mean 1.459 technically passes the 1.4 floor but with zero margin — the minimum sample was exactly 1.4. Under enclosure thermal load, performance could slip below floor. (2) cpu_pct 83.6% mean fails the 80% target. (3) inf_ms 686ms fires the 600ms budget warning on every single frame, vs 3-thread sessions where some frames were within budget. (4) Thermal savings are negligible (−0.7°C mean); active cooling is already installed and was running throughout this benchmark — thread reduction is not the lever for enclosure headroom. `detector.py` comment updated with benchmark note so this tradeoff is not re-litigated. Thread count remains `intra_op_num_threads=3, ORT_SEQUENTIAL`.
+
+**2026-05-08 — detection_event() window gate fix (Part 5)**
+Pi-only; iOS untouched. `state_machine.py` — latent bug in `detection_event()`: the `if/elif` at the IDLE→ACTIVE transition had both branches calling `_start_recording()` identically, meaning `window_open` was not enforced and detections would trigger recording regardless of window state. Fixed: `elif self.state == RecordState.IDLE and not self.window_open` now logs at DEBUG level ("detection suppressed — window closed") and does nothing. `import logging` + `log = logging.getLogger(__name__)` added. HOLDING→ACTIVE and COUNTDOWN→ACTIVE transitions left unchanged (these correctly re-activate an in-progress session and do not consult `window_open`). `manual_override` early-return at top of method (line 67) is preserved — it already blocks all branches including HOLDING/COUNTDOWN, so no duplication needed. Four unit tests verified on Pi: (T1) window_open=False → state remains IDLE on detection; (T2) window_open=True → state transitions to ACTIVE; (T3) HOLDING→ACTIVE regardless of window_open; (T4) manual_override blocks detection even with window_open=True. Prior to this fix (Parts 1–4): `window_open` was managed correctly but had no effect on detection recording because both branches of the if/elif called `_start_recording`.
+
+**2026-05-08 — dawn/dusk window always-open fix (Part 4)**
+Pi: `config.py` — new `dawn_dusk_enabled: bool = False` field (default disabled). `api_server.py` — (1) `_SETTINGS_FILE` (`data/settings.json`) loaded at startup; persists `dawn_dusk_enabled` across restarts. (2) `open_window(TriggerType.SCHEDULED)` called before `detector.start()` when `dawn_dusk_enabled=False`, ensuring `window_open=True` from first frame. (3) `_schedule_windows()` inner loop: when `dawn_dusk_enabled=False`, skips astral time calculation entirely and reopens the window if it was ever closed — scheduler cannot close the window while disabled. (4) New `POST /settings/dawn_dusk` endpoint accepts `{"enabled": bool}`, persists to `data/settings.json`, and immediately opens the window if disabling. (5) `/status` now includes `dawn_dusk_enabled` field. Root cause: without the toggle, `_schedule_windows()` calculated dawn/dusk for Prospect Lake (48.515°N, −123.408°W) and correctly determined the system was outside both windows during mid-day operation, leaving `window_open=False` permanently. `detection_event()` in `state_machine.py` has an identical `if/elif` that started recording regardless of `window_open` (latent bug, not fixed here per user instruction — that path "worked as before"). To enable scheduled dawn/dusk mode: `curl -X POST http://raspberrypi.local:5001/settings/dawn_dusk -H "Content-Type: application/json" -d '{"enabled": true}'`. Default is disabled (always open).
+
 **2026-05-08 — No-sensor None returns, timecode relocation (Part 3)**
 Pi: (1) `sensors.py` — `read_lux()`, `read_ev()`, `read_temperature()`, `read_humidity()`, `read_pressure()`, `read_dew_point()` all now return `None` (typed `float | None`) when hardware is absent instead of simulated values. `read_dew_point()` also returns `None` if either temperature or humidity is `None`. Simulation fallback code and diurnal lux curve removed. Log messages changed from `log.warning("No ... found — simulating ...")` to `log.info("no ... present — ... readings will be None")`. `_recording`, `_nd_filter`, `_iso`, `_ssd_free_gb`, `_house_drive_used_gb` state vars retained (still used in CPU temp fallback and storage sim fallback). `random` import retained (used in CPU temp and SSD fallbacks). (2) `api_server.py` — `lux:.1f` format string in `_on_record_stop` log message fixed to handle `None` (`lux_str` helper). (3) `agent.py` — `_fmt(v, suffix="")` module-level helper added; `hw_lux_label`/`hw_env_label` say "absent" (not "simulated") when no hardware; context block uses `_fmt()` for all env/lux values so Tier 2 LLM receives "--" instead of "None". iOS: (4) `DataViewModel.swift` — `enclosureTempC`, `enclosureHumidity`, `pressure`, `lux`, `ev` changed from `Double` to `Double?` (nil initial); `dewPoint` computed var changed to `Double?` (returns nil if temp or humidity nil); `camTimecode: String?` added; `HealthPoll` gains `temperatureC`, `humidityPct`, `dewPointC`, `pressureHpa`, `luxValue`, `evValue`, `cpuTempC`, `timecode` decodable fields; `pollHealth()` sets these from poll; sensor drift removed from `tick()`. (5) `DataTabView.swift` — ENCLOSURE card uses `.map { format } ?? "--"` pattern with `valueColor: Theme.tertiary` when nil; TIMECODE MetricCell removed from ENCLOSURE section (third slot in row 2 is now `Spacer()`). (6) `CameraTabView.swift` — `stillDataBar` gains `TC HH:MM:SS:FF` label (SF Mono 9pt, `Theme.tertiary`) after shutter angle; renders `TC --:--:--:--` when `camTimecode` is nil. Operator note: no environmental sensors connected. BME280/TSL2591 on I2C will auto-populate on next service start when wired.
 
@@ -361,6 +385,9 @@ Pi: (1) `notifier.py` — added `cpu_temp_warning` tier at >65°C (priority `def
 
 **2026-05-08 — Address geocoding, /snapshot fix, storage snapshots hardening (Part 1)**
 iOS: (1) `SettingsTabView.swift` — DEPLOYMENT card gains LOCATION address-search field above lat/long. `LocationSearchViewModel` (new `HHRCS/Settings/LocationSearchViewModel.swift`) drives `MKLocalSearchCompleter` with 0.3s debounce; up to 5 results in inline dropdown; no API key / location-services permission required. Tapping a result fires `MKLocalSearch` to get the full `MKMapItem`, extracts `coordinate.latitude/longitude` and formats a display address string (subThoroughfare + thoroughfare + locality + adminArea + postalCode + country). Auto-populates lat/long fields; selected address persisted via `AppSettings.deploymentAddress` key `hhrcs.deploymentAddress`. Address shown below lat/long in `Theme.secondary` 11pt SF Mono with truncation. Manual lat/long edit (while field focused) clears stale address string. Clearing the LOCATION field while a stored address exists shows themed `ClearLocationSheet` confirmation (matching `ChecklistResetSheet` style) — lat/long zeroed on confirm. `AppSettings.swift` gains `deploymentAddress: String`. (2) `DataViewModel.swift` — removed stale `/snapshot` call from `captureStill()` fallback array (was 404-ing on every manual still); rewrote `captureAndStoreSnapshot()` to use `POST /still/trigger` + `GET /stills/latest` matching the rest of the Pi cam still flow. Pi: (3) `storage_monitor.py` — `_load_snapshots()` hardened: empty file returns `[]` silently; corrupt JSON logs once then renames file to `.corrupt.<timestamp>` for forensics; added `import time`. Storage snapshots file on Pi confirmed valid (67 bytes, well-formed JSON).
+
+**2026-05-08 — Comprehensive iOS + Pi refactor (multi-part)**
+iOS + Pi. Section 1 (FEED/CameraTabView): removed DETECT page entirely (case detection removed from CameraPage enum; DetectionOverlayView tab removed; detectionHudStrip/detectionControlBar/YoloInfoPopover removed; verifyPolling removed); still-frame data bar (top row) replaced TC column with countdown-since-last-update + refresh button, all pure white; standalone top-right refresh overlay removed; captureFlash color changed from Theme.accent to `Color(hex: "FF3B30")` (red). Section 2 (FIELD): `ConfirmationCard.swift` created as shared component at `HHRCS/UI/ConfirmationCard.swift` — ZStack with 30% black scrim + card (title, optional message, confirm/cancel buttons); `StillsGalleryView.swift` — long-press delete now uses ConfirmationCard overlay instead of DeleteConfirmSheet sheet; `StillFrameView.swift` — same for FullscreenImageView delete. Section 3 (DATA+SETTINGS): `AppSettings.swift` — added `notifySystemAlerts` and `notifyAgentActivity` @Published properties; `DataViewModel.swift` — added `ExternalDrive` struct; added `camShutterAngle`, `camLens`, `camBattery`, `camCodecVariant`, `camFormatDetails`, `externalDrives` @Published vars; HealthPoll extended with same + CodingKeys; `DiagnosticRecovery.swift` — DiagnosticDot enum restructured to 8 dots (PI/BMPCC/CAM/YOLO/HDMI + separator + PI SD/CAM SD/CAM CF); BmpccDetailView replaces old CamDetailView; new CamDetailView (Pi Camera Module 3); PiSdDetailView replaces old SsdDetailView; CamSdDetailView + CamCfDetailView added; YoloDetailView: SIM MODE row removed; `SettingsTabView.swift` — logCard removed; diagnosticCard updated to 8-dot layout with separator; dotDetailPanel updated for new cases; camStatus/bmpccStatus/piSdStatus/camSdStatus/camCfStatus computed vars; systemCard reduced to DAWN/DUSK WINDOWS only; notificationsCard restructured: master PUSH NOTIFICATIONS toggle + 5 sub-categories (RECORDING & STILLS, ANIMAL DETECTIONS, DEPLOYMENTS, SYSTEM ALERTS, AGENT ACTIVITY) shown when master ON; deploymentCard: address display line removed; ChecklistResetSheet + ClearLocationSheet replaced by ConfirmationCard overlays and deleted; `DataTabView.swift` — cameraSection expanded with rows for SHUTTER ANG, BATTERY, LENS, CODEC VAR, FORMAT; HOUSE DRIVE replaced by ForEach over vm.externalDrives (conditional). Section 4 (Pi): `detector.py` — simulation mode removed entirely (_sim_loop deleted, _using_real simplified to picamera2+onnx+env check, _flag_file/.sim_mode removed, sim-mode branch in _camera_stream_loop removed, fallback in _real_loop logs and exits instead of calling _sim_loop, random import removed, _CLASSES/_WEIGHTS removed); `api_server.py` — _on_record_start always calls camera.record_start(); _on_record_stop always calls camera.record_stop(); yolo_sim_mode removed from /status; new cam fields added to /status (cam_shutter_angle, cam_battery, cam_lens, cam_codec_variant, cam_format_details); _get_external_drives() helper added; external_drives added to /status; `config.py` — still_interval_minutes removed; `camera_http.py` — get_shutter_angle(), get_battery(), get_lens_info() methods added; get_full_state() expanded with new fields + cam_remaining_record_time from media.remainingRecordTime + codec split into base+variant + cam_format_details; `agent.py` — api_key fallback to config.agent_api_key when ANTHROPIC_API_KEY env var not set.
 
 **2026-05-07 — UI cleanup batch: settings/field/stills/feed (Part 10)**
 iOS-only; no Pi changes. (1) SETTINGS — LOG extracted from DIAGNOSTIC card into a standalone tappable card (`logCard`) inserted directly below DIAGNOSTIC in the settings scroll view. Header row: `LOG` title left + chevron right; tapping anywhere toggles expanded/collapsed; default collapsed; `easeInOut(0.2s)` animation. DIAGNOSTIC card now only contains dot rows and active-dot detail panel; LOG chevron button removed from DIAGNOSTIC. (2) FIELD — Swipe between STILLS / AGENT / LOG sub-pages: `switch segment {}` replaced by `TabView(selection: $segment)` with `.tabViewStyle(.page(indexDisplayMode: .never))`; existing `segment` state var drives both tab bar tap selection and swipe. (3) STILLS source label — `CapturedStill.sourceLabel` computed property added (`triggerType == "hdmi" ? "BMPCC" : "CAM"`); 9pt SF Mono `Theme.tertiary` label shown centered below each thumbnail in `StillCell` (4pt spacing); BMPCC badge (was keyed off `bmpccFilename`) removed; `FullscreenImageView` gains optional `sourceLabel: String?` shown top-left at 16pt padding. (4) STILLS empty state — "tap the camera button..." helper text removed; empty state is icon + "NO STILLS CAPTURED" only. (5) STILLS long-press delete — `LongPressGesture(minimumDuration: 0.4)` replaces `.onLongPressGesture`; `UIImpactFeedbackGenerator(style: .medium)` haptic on iOS; system `.alert()` replaced by themed `DeleteConfirmSheet` (`.sheet(isPresented:)`): `Theme.background` full-screen, `Theme.cardBackground` card with 32pt margins, centered slightly above center; "DELETE STILL?" header + "This cannot be undone." body; CANCEL (`Theme.secondary`) / DELETE (`Theme.recordingRed`) horizontal buttons; same sheet accessible from fullscreen via `FullscreenImageView`'s optional `onDelete` closure. (6) FEED — `Text("POLLING")` changed to `Text("CONNECTING")` in `CameraTabView.swift` (the empty-state label when no still is available yet).

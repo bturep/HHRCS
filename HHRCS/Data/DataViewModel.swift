@@ -40,6 +40,21 @@ struct DetectionHistoryItem: Identifiable, Decodable {
     }
 }
 
+struct ExternalDrive: Decodable, Identifiable {
+    var id: String { name }
+    let name:       String
+    let usedBytes:  Int
+    let totalBytes: Int
+    var usedPercent: Double { totalBytes > 0 ? Double(usedBytes) / Double(totalBytes) * 100 : 0 }
+    var usedTB:  Double { Double(usedBytes)  / 1_000_000_000_000 }
+    var totalTB: Double { Double(totalBytes) / 1_000_000_000_000 }
+    enum CodingKeys: String, CodingKey {
+        case name
+        case usedBytes  = "used_bytes"
+        case totalBytes = "total_bytes"
+    }
+}
+
 struct StorageSnapshot: Decodable, Identifiable {
     var id: String { date }
     let date:      String
@@ -178,6 +193,14 @@ final class DataViewModel: ObservableObject {
     @Published var camGain:                 Int?    = nil
     @Published var camActiveMediaSlot:      String  = "—"
     @Published var camRemainingRecordTime:  Int?    = nil
+    @Published var camShutterAngle:         Double? = nil
+    @Published var camLens:                 String? = nil
+    @Published var camBattery:              Int?    = nil
+    @Published var camCodecVariant:         String? = nil
+    @Published var camFormatDetails:        String? = nil
+
+    // MARK: – External drives (from Pi /status)
+    @Published var externalDrives: [ExternalDrive] = []
 
     // MARK: – Deployment
     @Published var deploymentChangeCount: Int = 0
@@ -357,6 +380,12 @@ final class DataViewModel: ObservableObject {
         let camGain:                 Int?
         let camActiveMediaSlot:      String?
         let camRemainingRecordTime:  Int?
+        let camShutterAngle:         Double?
+        let camLens:                 String?
+        let camBattery:              Int?
+        let camCodecVariant:         String?
+        let camFormatDetails:        String?
+        let externalDrives:          [ExternalDrive]?
 
         enum CodingKeys: String, CodingKey {
             case yoloRunning                 = "yolo_running"
@@ -390,6 +419,12 @@ final class DataViewModel: ObservableObject {
             case camGain                     = "cam_gain"
             case camActiveMediaSlot          = "cam_active_media_slot"
             case camRemainingRecordTime      = "cam_remaining_record_time"
+            case camShutterAngle             = "cam_shutter_angle"
+            case camLens                     = "cam_lens"
+            case camBattery                  = "cam_battery"
+            case camCodecVariant             = "cam_codec_variant"
+            case camFormatDetails            = "cam_format_details"
+            case externalDrives              = "external_drives"
         }
     }
 
@@ -496,6 +531,12 @@ final class DataViewModel: ObservableObject {
             camGain                = poll.camGain
             camActiveMediaSlot     = poll.camActiveMediaSlot  ?? "—"
             camRemainingRecordTime = poll.camRemainingRecordTime
+            camShutterAngle        = poll.camShutterAngle
+            camLens                = poll.camLens
+            camBattery             = poll.camBattery
+            camCodecVariant        = poll.camCodecVariant
+            camFormatDetails       = poll.camFormatDetails
+            if let drives = poll.externalDrives { externalDrives = drives }
 
             // SSD storage_monitor
             if let s = poll.storage {

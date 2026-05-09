@@ -16,6 +16,7 @@ class Config:
     timezone: str = "America/Vancouver"
 
     # Recording windows
+    dawn_dusk_enabled: bool = False        # False = window always open; True = only open during dawn/dusk
     dawn_offset_minutes: int = -10        # open before civil twilight
     dawn_close_minutes: int = 90          # close after sunrise
     dusk_open_minutes: int = -90          # open before sunset
@@ -58,7 +59,6 @@ class Config:
     # Pi
     pi_cam_resolution: Tuple[int, int] = (1152, 648)
     pi_cam_sensor_mode: Tuple[int, int] = (2304, 1296)
-    still_interval_minutes: int = 30
 
     # API
     api_host: str = "0.0.0.0"

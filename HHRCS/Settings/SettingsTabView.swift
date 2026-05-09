@@ -18,7 +18,6 @@ struct SettingsTabView: View {
 
     @State private var isRestartingHhrcs    = false
     @State private var isRestartingDetector = false
-    @State private var showLog:   Bool           = false
     @State private var activeDot: DiagnosticDot? = nil
 
     @State private var piDepActive        = false
@@ -55,7 +54,6 @@ struct SettingsTabView: View {
             VStack(alignment: .leading, spacing: 12) {
                 diagnosticCard
                 enclosureCard
-                logCard
                 refreshIntervalCard
                 detectorThresholdCard
                 deploymentCard
@@ -172,12 +170,18 @@ struct SettingsTabView: View {
                 advisoryLine
 
                 HStack(spacing: 0) {
-                    diagnosticDotButton(.pi,   status: vm.healthPiReachable ? .green : .red)
-                    diagnosticDotButton(.cam,  status: camStatus)
-                    diagnosticDotButton(.yolo, status: yoloStatus)
-                    diagnosticDotButton(.card, status: cardStatus)
-                    diagnosticDotButton(.ssd,  status: ssdStatus)
-                    diagnosticDotButton(.hdmi, status: hdmiStatus)
+                    diagnosticDotButton(.pi,    status: vm.healthPiReachable ? .green : .red)
+                    diagnosticDotButton(.bmpcc, status: bmpccStatus)
+                    diagnosticDotButton(.cam,   status: camStatus)
+                    diagnosticDotButton(.yolo,  status: yoloStatus)
+                    diagnosticDotButton(.hdmi,  status: hdmiStatus)
+                    Rectangle()
+                        .fill(Theme.rule)
+                        .frame(width: 1, height: 24)
+                        .padding(.horizontal, 4)
+                    diagnosticDotButton(.piSd,  status: piSdStatus)
+                    diagnosticDotButton(.camSd, status: camSdStatus)
+                    diagnosticDotButton(.camCf, status: camCfStatus)
                 }
 
                 if let dot = activeDot {
@@ -189,45 +193,11 @@ struct SettingsTabView: View {
         .animation(.easeInOut(duration: 0.2), value: activeDot)
     }
 
-    private var logCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) { showLog.toggle() }
-            } label: {
-                HStack {
-                    Text("LOG")
-                        .font(Theme.dataLabel(size: 9))
-                        .tracking(Theme.headerTracking)
-                        .foregroundStyle(Theme.cardLabel)
-                    Spacer()
-                    Image(systemName: showLog ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .regular, design: .monospaced))
-                        .foregroundStyle(Theme.tertiary)
-                }
-            }
-            .buttonStyle(.plain)
-
-            if showLog {
-                logPanelView
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.cardBackground)
-        .cornerRadius(Theme.cardRadius)
-        .animation(.easeInOut(duration: 0.2), value: showLog)
-    }
-
     @ViewBuilder
     private func diagnosticDotButton(_ dot: DiagnosticDot, status: HealthStatus) -> some View {
         Button {
             withAnimation(.easeInOut(duration: 0.2)) {
-                if activeDot == dot {
-                    activeDot = nil
-                } else {
-                    activeDot = dot
-                    showLog = false
-                }
+                activeDot = activeDot == dot ? nil : dot
             }
         } label: {
             VStack(spacing: 5) {
@@ -250,58 +220,14 @@ struct SettingsTabView: View {
     @ViewBuilder
     private func dotDetailPanel(_ dot: DiagnosticDot) -> some View {
         switch dot {
-        case .pi:   PiDetailView().environmentObject(vm)
-        case .cam:  CamDetailView().environmentObject(vm)
-        case .yolo: YoloDetailView().environmentObject(vm)
-        case .card: CardDetailView().environmentObject(vm)
-        case .ssd:  SsdDetailView().environmentObject(vm)
-        case .hdmi: HdmiDetailView().environmentObject(vm)
-        }
-    }
-
-    private var logPanelView: some View {
-        VStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(EventLogFilter.allCases, id: \.self) { filter in
-                        Button { vm.eventLogFilter = filter } label: {
-                            Text(filter.rawValue)
-                                .font(Theme.dataLabel(size: 9))
-                                .foregroundStyle(vm.eventLogFilter == filter
-                                    ? Theme.background : Theme.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(vm.eventLogFilter == filter ? Theme.accentColor : Color.clear)
-                                .overlay(RoundedRectangle(cornerRadius: 3)
-                                    .stroke(
-                                        vm.eventLogFilter == filter ? Theme.accentColor : Theme.tertiary,
-                                        lineWidth: 0.5
-                                    ))
-                                .cornerRadius(3)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .padding(.top, 10)
-            .padding(.bottom, 6)
-
-            if vm.filteredEventLog.isEmpty {
-                Text(vm.healthPiReachable ? "No events in window" : "Pi unreachable")
-                    .font(Theme.bodyMono(size: 11))
-                    .foregroundStyle(Theme.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 4)
-            } else {
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(vm.filteredEventLog) { line in
-                            DiagnosticEventRow(line: line)
-                        }
-                    }
-                }
-                .frame(maxHeight: 170)
-            }
+        case .pi:    PiDetailView().environmentObject(vm)
+        case .bmpcc: BmpccDetailView().environmentObject(vm)
+        case .cam:   CamDetailView().environmentObject(vm)
+        case .yolo:  YoloDetailView().environmentObject(vm)
+        case .hdmi:  HdmiDetailView().environmentObject(vm)
+        case .piSd:  PiSdDetailView().environmentObject(vm)
+        case .camSd: CamSdDetailView().environmentObject(vm)
+        case .camCf: CamCfDetailView().environmentObject(vm)
         }
     }
 
@@ -353,32 +279,41 @@ struct SettingsTabView: View {
         return f.string(from: Date())
     }
 
-    private var camStatus: HealthStatus {
+    private var bmpccStatus: HealthStatus {
         guard vm.healthPiReachable else { return .grey }
         return vm.camReachable ? .green : .red
     }
 
-    private var cardStatus: HealthStatus {
-        guard vm.camReachable else { return .grey }
-        return vm.camActiveMediaSlot == "—" ? .red : .green
+    private var camStatus: HealthStatus {
+        return vm.healthPiReachable ? .green : .grey
     }
 
     private var yoloStatus: HealthStatus {
         guard vm.healthPiReachable else { return .grey }
-        if !vm.healthYoloRunning { return .red }
-        return vm.healthYoloSimMode ? .yellow : .green
+        return vm.healthYoloRunning ? .green : .red
     }
 
-    private var ssdStatus: HealthStatus {
+    private var hdmiStatus: HealthStatus {
+        guard vm.healthPiReachable else { return .grey }
+        return vm.hdmiReachable ? .green : .red
+    }
+
+    private var piSdStatus: HealthStatus {
         guard vm.healthSsdMounted else { return .red }
         if vm.healthSsdFreePct < 5  { return .red }
         if vm.healthSsdFreePct < 10 { return .yellow }
         return .green
     }
 
-    private var hdmiStatus: HealthStatus {
-        guard vm.healthPiReachable else { return .grey }
-        return vm.hdmiReachable ? .green : .red
+    private var camSdStatus: HealthStatus {
+        guard vm.camReachable else { return .grey }
+        return vm.camActiveMediaSlot.lowercased().contains("sd") ? .green : .grey
+    }
+
+    private var camCfStatus: HealthStatus {
+        guard vm.camReachable else { return .grey }
+        let slot = vm.camActiveMediaSlot.lowercased()
+        return (slot.contains("cfast") || slot.contains("cf")) ? .green : .grey
     }
 
     @ViewBuilder
@@ -544,15 +479,6 @@ struct SettingsTabView: View {
                         }
                 }
 
-                if !settings.deploymentAddress.isEmpty {
-                    Text(settings.deploymentAddress)
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
-                        .foregroundStyle(Theme.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .padding(.vertical, 8)
-                }
-
                 HRule()
 
                 // URL selector
@@ -645,13 +571,22 @@ struct SettingsTabView: View {
             }
             .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showClearLocationSheet) {
-            ClearLocationSheet(isPresented: $showClearLocationSheet) {
-                settings.deploymentAddress = ""
-                latText = ""
-                lngText = ""
-                settings.latitude  = 0
-                settings.longitude = 0
+        .overlay {
+            if showClearLocationSheet {
+                ConfirmationCard(
+                    title:        "CLEAR LOCATION?",
+                    message:      "Lat/long will also be cleared.",
+                    confirmLabel: "CLEAR",
+                    onConfirm: {
+                        showClearLocationSheet = false
+                        settings.deploymentAddress = ""
+                        latText = ""
+                        lngText = ""
+                        settings.latitude  = 0
+                        settings.longitude = 0
+                    },
+                    onCancel: { showClearLocationSheet = false }
+                )
             }
         }
     }
@@ -825,31 +760,7 @@ struct SettingsTabView: View {
     private var systemCard: some View {
         SectionCard(title: "SYSTEM") {
             VStack(spacing: 0) {
-                ToggleRow(label: "SIMULATION MODE",     isOn: $settings.simulationMode)
-                HRule()
                 ToggleRow(label: "DAWN / DUSK WINDOWS", isOn: $settings.dawnDuskWindows)
-                HRule()
-                ToggleRow(label: "DETECTION TRIGGER",   isOn: $settings.detectionTrigger)
-                HRule()
-                ToggleRow(label: "PUSH NOTIFICATIONS",  isOn: $settings.pushNotificationsEnabled, onChange: { enabled in
-                    if enabled {
-                        NotificationManager.shared.requestPermission()
-                        if settings.simulationMode {
-                            NotificationManager.shared.scheduleSimulatedDetection(
-                                deploymentName: settings.deploymentName,
-                                positionName: settings.positionName
-                            )
-                        }
-                    }
-                })
-                HRule()
-                ToggleRow(label: "30-MIN STILLS",       isOn: $settings.thirtyMinStills)
-                HRule()
-                ToggleRow(
-                    label:    "PI AGENT LOG",
-                    subtitle: "Show autonomous observations in Log",
-                    isOn:     $settings.piAgentLogEnabled
-                )
             }
         }
     }
@@ -894,11 +805,28 @@ struct SettingsTabView: View {
     private var notificationsCard: some View {
         SectionCard(title: "NOTIFICATIONS") {
             VStack(spacing: 0) {
-                ToggleRow(label: "RECORDING & STILLS", isOn: $settings.notifyRecording)
-                HRule()
-                ToggleRow(label: "ANIMAL DETECTIONS",  isOn: $settings.notifyDetections)
-                HRule()
-                ToggleRow(label: "DEPLOYMENTS",        isOn: $settings.notifyDeployments)
+                ToggleRow(label: "PUSH NOTIFICATIONS", isOn: $settings.pushNotificationsEnabled, onChange: { enabled in
+                    if enabled { NotificationManager.shared.requestPermission() }
+                })
+                if settings.pushNotificationsEnabled {
+                    HRule()
+                    VStack(spacing: 0) {
+                        ToggleRow(label: "RECORDING & STILLS", isOn: $settings.notifyRecording)
+                            .padding(.leading, 16)
+                        HRule()
+                        ToggleRow(label: "ANIMAL DETECTIONS",  isOn: $settings.notifyDetections)
+                            .padding(.leading, 16)
+                        HRule()
+                        ToggleRow(label: "DEPLOYMENTS",        isOn: $settings.notifyDeployments)
+                            .padding(.leading, 16)
+                        HRule()
+                        ToggleRow(label: "SYSTEM ALERTS",      isOn: $settings.notifySystemAlerts)
+                            .padding(.leading, 16)
+                        HRule()
+                        ToggleRow(label: "AGENT ACTIVITY",     isOn: $settings.notifyAgentActivity)
+                            .padding(.leading, 16)
+                    }
+                }
             }
         }
     }
@@ -1400,8 +1328,16 @@ private struct DeploymentChecklistCard: View {
                         .padding(.vertical, 12)
                 }
                 .buttonStyle(.plain)
-                .sheet(isPresented: $showResetConfirm) {
-                    ChecklistResetSheet(isPresented: $showResetConfirm, onConfirm: resetAll)
+                .overlay {
+                    if showResetConfirm {
+                        ConfirmationCard(
+                            title:        "RESET ALL CHECKBOXES?",
+                            message:      "This cannot be undone.",
+                            confirmLabel: "RESET",
+                            onConfirm:    { showResetConfirm = false; resetAll() },
+                            onCancel:     { showResetConfirm = false }
+                        )
+                    }
                 }
             }
         }
@@ -1466,57 +1402,6 @@ private struct DeploymentChecklistCard: View {
     }
 }
 
-// MARK: – Checklist reset confirmation sheet
-
-private struct ChecklistResetSheet: View {
-    @Binding var isPresented: Bool
-    let onConfirm: () -> Void
-
-    var body: some View {
-        ZStack {
-            Theme.background.ignoresSafeArea()
-            VStack(spacing: 0) {
-                Spacer()
-                VStack(spacing: 20) {
-                    VStack(spacing: 6) {
-                        Text("RESET ALL CHECKBOXES?")
-                            .font(.system(size: 13, weight: .regular, design: .monospaced))
-                            .tracking(1.0)
-                            .foregroundStyle(.white)
-                        Text("This cannot be undone.")
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
-                            .foregroundStyle(Theme.secondary)
-                    }
-                    HStack(spacing: 16) {
-                        Button("CANCEL") { isPresented = false }
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
-                            .foregroundStyle(Theme.secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.rule, lineWidth: 1))
-                            .buttonStyle(.plain)
-                        Button("RESET") {
-                            onConfirm()
-                            isPresented = false
-                        }
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
-                        .foregroundStyle(Theme.dotRed)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.dotRed, lineWidth: 1))
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(32)
-                .background(Theme.cardBackground)
-                .cornerRadius(Theme.cardRadius)
-                .padding(.horizontal, 24)
-                Spacer()
-            }
-        }
-    }
-}
-
 // MARK: – Diagnostic event log row
 
 private struct DiagnosticEventRow: View {
@@ -1568,54 +1453,6 @@ private struct PINField: View {
                 .foregroundColor(.white)
                 .tint(Theme.accentColor)
                 .keyboardType(.numberPad)
-        }
-    }
-}
-
-// MARK: – Clear location confirmation sheet
-
-private struct ClearLocationSheet: View {
-    @Binding var isPresented: Bool
-    let onConfirm: () -> Void
-
-    var body: some View {
-        ZStack {
-            Theme.background.ignoresSafeArea()
-            VStack(spacing: 0) {
-                Spacer()
-                VStack(spacing: 20) {
-                    VStack(spacing: 6) {
-                        Text("CLEAR LOCATION?")
-                            .font(.system(size: 13, weight: .regular, design: .monospaced))
-                            .tracking(1.0)
-                            .foregroundStyle(.white)
-                        Text("Lat/long will also be cleared.")
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
-                            .foregroundStyle(Theme.secondary)
-                    }
-                    HStack(spacing: 16) {
-                        Button("CANCEL") { isPresented = false }
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
-                            .foregroundStyle(Theme.secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.rule, lineWidth: 1))
-                            .buttonStyle(.plain)
-                        Button("CLEAR") { onConfirm(); isPresented = false }
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
-                            .foregroundStyle(Theme.dotRed)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.dotRed, lineWidth: 1))
-                            .buttonStyle(.plain)
-                    }
-                }
-                .padding(32)
-                .background(Theme.cardBackground)
-                .cornerRadius(Theme.cardRadius)
-                .padding(.horizontal, 24)
-                Spacer()
-            }
         }
     }
 }

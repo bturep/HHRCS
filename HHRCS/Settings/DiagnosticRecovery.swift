@@ -12,12 +12,23 @@ enum DiagnosticPanelMode: Equatable {
 }
 
 enum DiagnosticDot: String, CaseIterable {
-    case pi   = "PI"
-    case cam  = "CAM"
-    case yolo = "YOLO"
-    case card = "CARD"
-    case ssd  = "SSD"
-    case hdmi = "HDMI"
+    // Connectivity row
+    case pi    = "PI"
+    case bmpcc = "BMPCC"
+    case cam   = "CAM"
+    case yolo  = "YOLO"
+    case hdmi  = "HDMI"
+    // Storage row
+    case piSd  = "PI SD"
+    case camSd = "CAM SD"
+    case camCf = "CAM CF"
+
+    var isStorageDot: Bool {
+        switch self {
+        case .piSd, .camSd, .camCf: return true
+        default: return false
+        }
+    }
 }
 
 // MARK: – Recovery step model
@@ -190,9 +201,9 @@ struct PiDetailView: View {
     }
 }
 
-// MARK: – CAM detail
+// MARK: – BMPCC detail (was CamDetailView)
 
-struct CamDetailView: View {
+struct BmpccDetailView: View {
     @EnvironmentObject var vm: DataViewModel
     @State private var showingRecovery = false
 
@@ -276,26 +287,22 @@ struct CamDetailView: View {
     }
 }
 
-// MARK: – CARD detail
+// MARK: – CAM detail (Pi Camera Module 3)
 
-struct CardDetailView: View {
+struct CamDetailView: View {
     @EnvironmentObject var vm: DataViewModel
 
     var body: some View {
         VStack(spacing: 0) {
-            diagRow("MEDIA SLOT",
-                    value:      vm.camActiveMediaSlot,
-                    valueColor: vm.camActiveMediaSlot == "—" ? Theme.dotRed : Theme.accentColor)
-            HRule()
-            diagRow("RECORDING",
-                    value:      vm.camRecording ? "Recording" : "Idle",
-                    valueColor: vm.camRecording ? Theme.dotRed : Theme.secondary)
-            HRule()
-            diagRow("TIME REMAINING",
-                    value:      vm.camRemainingRecordTime.map { "\($0 / 60)m \($0 % 60)s" } ?? "—",
+            diagRow("MODULE",
+                    value:      "Pi Camera Module 3",
                     valueColor: Theme.secondary)
             HRule()
-            Text("PHYSICAL MEDIA — SITE VISIT REQUIRED FOR SWAP")
+            diagRow("STREAM",
+                    value:      vm.healthPiReachable ? "Active" : "Unavailable",
+                    valueColor: vm.healthPiReachable ? Theme.accentColor : Theme.dotRed)
+            HRule()
+            Text("MJPEG STREAM ON :5001/STREAM")
                 .font(.system(size: 9, weight: .regular, design: .monospaced))
                 .tracking(1.0)
                 .foregroundStyle(Theme.tertiary)
@@ -321,10 +328,6 @@ struct YoloDetailView: View {
                 diagRow("STATUS",
                         value:      vm.healthYoloRunning ? "Running" : "Not running",
                         valueColor: vm.healthYoloRunning ? Theme.accentColor : Theme.dotRed)
-                HRule()
-                diagRow("MODE",
-                        value:      vm.healthYoloSimMode ? "Simulation" : "Live inference",
-                        valueColor: vm.healthYoloSimMode ? Theme.dotAmber : Theme.accentColor)
                 HRule()
                 diagRow("LAST INFER",
                         value:      vm.healthDetectLastAgoSec.map { String(format: "%.0fs ago", $0) } ?? "—",
@@ -353,12 +356,6 @@ struct YoloDetailView: View {
                 }
                 return .fail("Timeout")
             },
-            RecoveryStep(label: "CHECKING INFERENCE MODE") {
-                await vm.refreshHealth()
-                if vm.healthYoloRunning && !vm.healthYoloSimMode { return .pass("Live inference") }
-                if vm.healthYoloRunning &&  vm.healthYoloSimMode { return .pass("Sim mode") }
-                return .fail("Detector not running")
-            },
             RecoveryStep(label: "VERIFYING") {
                 await vm.refreshHealth()
                 return vm.healthYoloRunning ? .pass("OK") : .fail("Still not running")
@@ -367,9 +364,9 @@ struct YoloDetailView: View {
     }
 }
 
-// MARK: – SSD detail
+// MARK: – PI SD detail (was SsdDetailView)
 
-struct SsdDetailView: View {
+struct PiSdDetailView: View {
     @EnvironmentObject var vm: DataViewModel
 
     var body: some View {
@@ -400,6 +397,59 @@ struct SsdDetailView: View {
         if vm.healthSsdFreePct < 5  { return Theme.dotRed }
         if vm.healthSsdFreePct < 10 { return Theme.dotAmber }
         return Theme.accentColor
+    }
+}
+
+// MARK: – CAM SD detail (BMPCC SD slot)
+
+struct CamSdDetailView: View {
+    @EnvironmentObject var vm: DataViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            let isActive = vm.camActiveMediaSlot.lowercased().contains("sd")
+            diagRow("ACTIVE",
+                    value:      isActive ? "Yes" : "No",
+                    valueColor: isActive ? Theme.accentColor : Theme.secondary)
+            HRule()
+            diagRow("SLOT",   value: "SD Card (Slot 2)", valueColor: Theme.secondary)
+            HRule()
+            Text("PHYSICAL ACCESS REQUIRED FOR MEDIA SWAP")
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .tracking(1.0)
+                .foregroundStyle(Theme.tertiary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 10)
+        }
+    }
+}
+
+// MARK: – CAM CF detail (BMPCC CFast slot)
+
+struct CamCfDetailView: View {
+    @EnvironmentObject var vm: DataViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            let isActive = vm.camActiveMediaSlot.lowercased().contains("cfast") ||
+                           vm.camActiveMediaSlot.lowercased().contains("cf")
+            diagRow("ACTIVE",
+                    value:      isActive ? "Yes" : "No",
+                    valueColor: isActive ? Theme.accentColor : Theme.secondary)
+            HRule()
+            diagRow("REMAINING",
+                    value:      vm.camRemainingRecordTime.map { "\($0 / 60)m \($0 % 60)s" } ?? "—",
+                    valueColor: Theme.secondary)
+            HRule()
+            diagRow("SLOT",   value: "CFast 2.0 (Slot 1)", valueColor: Theme.secondary)
+            HRule()
+            Text("PHYSICAL ACCESS REQUIRED FOR MEDIA SWAP")
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .tracking(1.0)
+                .foregroundStyle(Theme.tertiary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 10)
+        }
     }
 }
 

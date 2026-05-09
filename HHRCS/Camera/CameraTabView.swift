@@ -4,15 +4,13 @@ import UIKit
 #endif
 
 private enum CameraPage: Int, CaseIterable {
-    case still     = 0
-    case live      = 1
-    case detection = 2
+    case still = 0
+    case live  = 1
 
     var label: String {
         switch self {
-        case .still:     return "BMPCC"
-        case .live:      return "CAM"
-        case .detection: return "DETECT"
+        case .still: return "BMPCC"
+        case .live:  return "CAM"
         }
     }
 }
@@ -28,12 +26,6 @@ struct CameraTabView: View {
     @State private var showISOPopover     = false
     @State private var showWBPopover      = false
     @State private var showShutterPopover = false
-    @State private var showYoloPopover    = false
-
-    // Verify mode — polls /detections/recent every 2s when active
-    @AppStorage("detectVerifyMode") private var detectVerifyMode: Bool = false
-    @State private var verifyDetections:  [DetectionHistoryItem] = []
-    @State private var verifyPollTask:    Task<Void, Never>?
 
     // HDMI still: POST /hdmi/still → GET /hdmi/stills/latest
     @StateObject private var hdmiPoller = StillPoller(
@@ -63,23 +55,14 @@ struct CameraTabView: View {
 
             TabView(selection: $currentPage) {
                 StillImagePage(poller: hdmiPoller, recordingState: vm.recordingState)
-                .padding(.top, 32)
-                .padding(.bottom, isLandscape ? 0 : 54)
-                .tag(CameraPage.still)
+                    .padding(.top, 32)
+                    .padding(.bottom, isLandscape ? 0 : 54)
+                    .tag(CameraPage.still)
 
                 StillImagePage(poller: camPoller)
                     .padding(.top, 32)
                     .padding(.bottom, isLandscape ? 0 : 54)
                     .tag(CameraPage.live)
-
-                DetectionOverlayView(
-                    poller: camPoller,
-                    verifyDetection:   verifyLatestDetection,
-                    verifyFiveMinCount: verifyFiveMinCount
-                )
-                .padding(.top, 32)
-                .padding(.bottom, isLandscape ? 0 : 54)
-                .tag(CameraPage.detection)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .ignoresSafeArea(edges: isLandscape ? .all : .top)
@@ -103,28 +86,19 @@ struct CameraTabView: View {
                         onRecord: { vm.togglePiCamRecord() },
                         onCapture: { Task { await vm.captureStill() } }
                     ) { pageIndicator }
-                case .detection:
-                    detectionControlBar
                 }
             }
         }
         .overlay(alignment: .top) {
             switch currentPage {
-            case .still:     stillDataBar
-            case .live:      EmptyView()
-            case .detection: detectionHudStrip
+            case .still: stillDataBar
+            case .live:  EmptyView()
             }
         }
         .background(Theme.background)
         .onAppear { startActivePoller() }
-        .onDisappear {
-            camPoller.stop(); hdmiPoller.stop()
-            stopVerifyPolling()
-        }
+        .onDisappear { camPoller.stop(); hdmiPoller.stop() }
         .onChange(of: currentPage) { _, _ in rebalancePollers() }
-        .onChange(of: detectVerifyMode) { _, on in
-            if on { startVerifyPolling() } else { stopVerifyPolling() }
-        }
         .onChange(of: isActive) { _, active in
             if active { startActivePoller() }
             else { camPoller.stop(); hdmiPoller.stop() }
@@ -150,7 +124,7 @@ struct CameraTabView: View {
         case .still:
             camPoller.stop()
             hdmiPoller.start()
-        case .live, .detection:
+        case .live:
             hdmiPoller.stop()
             camPoller.start()
         }
@@ -179,7 +153,7 @@ struct CameraTabView: View {
                 if settings.ownerModeEnabled {
                     Button { showISOPopover = true } label: {
                         Text("ISO \(vm.iso)")
-                            .foregroundStyle(Color.white.opacity(0.85))
+                            .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)
                     .popover(isPresented: $showISOPopover,
@@ -192,7 +166,7 @@ struct CameraTabView: View {
                     }
                 } else {
                     Text("ISO \(vm.iso)")
-                        .foregroundStyle(Color.white.opacity(0.6))
+                        .foregroundStyle(.white)
                 }
             }
             .font(.system(size: 11, weight: .regular, design: .monospaced))
@@ -203,7 +177,7 @@ struct CameraTabView: View {
                 if settings.ownerModeEnabled {
                     Button { showWBPopover = true } label: {
                         Text("\(vm.wbKelvin)K")
-                            .foregroundStyle(Color.white.opacity(0.85))
+                            .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)
                     .popover(isPresented: $showWBPopover,
@@ -216,7 +190,7 @@ struct CameraTabView: View {
                     }
                 } else {
                     Text("\(vm.wbKelvin)K")
-                        .foregroundStyle(Color.white.opacity(0.6))
+                        .foregroundStyle(.white)
                 }
             }
             .font(.system(size: 11, weight: .regular, design: .monospaced))
@@ -227,7 +201,7 @@ struct CameraTabView: View {
                 if settings.ownerModeEnabled {
                     Button { showShutterPopover = true } label: {
                         Text(shutterLabel)
-                            .foregroundStyle(Color.white.opacity(0.85))
+                            .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)
                     .popover(isPresented: $showShutterPopover,
@@ -240,16 +214,30 @@ struct CameraTabView: View {
                     }
                 } else {
                     Text(shutterLabel)
-                        .foregroundStyle(Color.white.opacity(0.6))
+                        .foregroundStyle(.white)
                 }
             }
             .font(.system(size: 11, weight: .regular, design: .monospaced))
 
             Spacer()
 
-            Text("TC \(vm.camTimecode ?? "--:--:--:--")")
-                .font(.system(size: 9, weight: .regular, design: .monospaced))
-                .foregroundStyle(Theme.tertiary)
+            // Refresh countdown + button (replaces TC)
+            HStack(spacing: 6) {
+                if let updated = hdmiPoller.lastUpdated {
+                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                        let elapsed = Int(max(0, ctx.date.timeIntervalSince(updated)))
+                        Text("\(elapsed)s")
+                            .font(.system(size: 9, weight: .regular, design: .monospaced))
+                            .foregroundStyle(.white)
+                    }
+                }
+                Button { hdmiPoller.refreshNow() } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 12)
         .frame(height: 32)
@@ -262,143 +250,6 @@ struct CameraTabView: View {
         return a.truncatingRemainder(dividingBy: 1) == 0
             ? "\(Int(a))°"
             : String(format: "%.1f°", a)
-    }
-
-    // MARK: – Detection HUD strip
-
-    private var detectionHudStrip: some View {
-        ZStack {
-            HStack(spacing: 8) {
-                HStack(spacing: 4) {
-                    if vm.triggerState == .active {
-                        Circle()
-                            .fill(Theme.accent)
-                            .frame(width: 5, height: 5)
-                    }
-                    Text(vm.triggerStateLabel)
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .tracking(1.2)
-                        .foregroundStyle(vm.triggerStateColor)
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 2)
-                        .stroke(vm.triggerStateColor.opacity(0.5), lineWidth: Theme.ruleWidth)
-                )
-
-                if !vm.lastDetectionClass.isEmpty {
-                    Text(vm.lastDetectionClass.uppercased())
-                        .font(.system(size: 9, weight: .regular, design: .monospaced))
-                        .foregroundStyle(Color.white.opacity(0.7))
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity)
-
-            Button { showYoloPopover = true } label: {
-                Text(vm.healthYoloSimMode ? "YOLOv8  SIM" : "YOLOv8  LIVE")
-                    .font(.system(size: 8, weight: .medium, design: .monospaced))
-                    .tracking(1.5)
-                    .foregroundStyle(Theme.accent.opacity(0.9))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Theme.background.opacity(0.7))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 2)
-                            .stroke(Theme.accent.opacity(0.4), lineWidth: Theme.ruleWidth)
-                    )
-            }
-            .buttonStyle(.plain)
-            .popover(isPresented: $showYoloPopover) {
-                YoloInfoPopover(simulationMode: settings.simulationMode)
-                    .presentationCompactAdaptation(.popover)
-            }
-
-            HStack {
-                Spacer()
-                Text(vm.lastDetectionTimeString)
-                    .font(.system(size: 9, weight: .regular, design: .monospaced))
-                    .foregroundStyle(Theme.tertiary)
-            }
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity)
-        }
-        .padding(.vertical, 6)
-        .background(Theme.background)
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: – Detection bottom bar
-
-    private var detectionControlBar: some View {
-        HStack {
-            Button {
-                detectVerifyMode.toggle()
-            } label: {
-                Text("VERIFY")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .tracking(1.5)
-                    .foregroundStyle(detectVerifyMode ? Theme.accentColor : Theme.tertiary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 2)
-                            .stroke(detectVerifyMode ? Theme.accentColor : Theme.tertiary,
-                                    lineWidth: 0.5)
-                    )
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, 16)
-
-            Spacer()
-            pageIndicator
-            Spacer()
-            Color.clear.frame(width: 60)  // balance the VERIFY button width
-        }
-        .frame(height: 44)
-        .padding(.bottom, 10)
-        .background(Theme.background)
-    }
-
-    // MARK: – Verify mode polling
-
-    private var verifyLatestDetection: DetectionHistoryItem? {
-        guard detectVerifyMode, let first = verifyDetections.first else { return nil }
-        let age = Date().timeIntervalSince(first.timestamp)
-        return age <= 60 ? first : nil
-    }
-
-    private var verifyFiveMinCount: Int {
-        guard detectVerifyMode else { return 0 }
-        let cutoff = Date().addingTimeInterval(-300)
-        return verifyDetections.filter { $0.timestamp >= cutoff }.count
-    }
-
-    private func startVerifyPolling() {
-        verifyPollTask?.cancel()
-        verifyPollTask = Task {
-            while !Task.isCancelled {
-                await fetchVerifyDetections()
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-            }
-        }
-    }
-
-    private func stopVerifyPolling() {
-        verifyPollTask?.cancel()
-        verifyPollTask = nil
-        verifyDetections = []
-    }
-
-    private func fetchVerifyDetections() async {
-        let base = AppSettings.shared.piServerURL
-        guard !base.isEmpty, let url = URL(string: base + "/detections/recent") else { return }
-        struct Response: Decodable { let detections: [DetectionHistoryItem] }
-        guard let (data, _) = try? await URLSession.shared.data(from: url),
-              let response  = try? JSONDecoder().decode(Response.self, from: data) else { return }
-        verifyDetections = response.detections
     }
 
     // MARK: – Page indicator
@@ -439,7 +290,7 @@ struct CameraTabView: View {
 
 private struct StillImagePage: View {
     @ObservedObject var poller: StillPoller
-    var recordingState: RecordingState = .idle  // BMPCC page only; CAM page leaves default
+    var recordingState: RecordingState = .idle
     @State private var showFullscreen  = false
 
     var body: some View {
@@ -463,7 +314,6 @@ private struct StillImagePage: View {
                 }
             }
 
-            // FINALIZING overlay — centered, matches control row indicator
             if recordingState == .finalizing {
                 VStack {
                     Spacer()
@@ -484,26 +334,6 @@ private struct StillImagePage: View {
                     .padding(.leading, 12)
                     .padding(.top, 6)
             }
-        }
-        .overlay(alignment: .topTrailing) {
-            HStack(spacing: 10) {
-                if let updated = poller.lastUpdated {
-                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                        let elapsed = Int(max(0, ctx.date.timeIntervalSince(updated)))
-                        Text("\(elapsed)s")
-                            .font(.system(size: 9, weight: .regular, design: .monospaced))
-                            .foregroundStyle(Theme.tertiary.opacity(0.4))
-                    }
-                }
-                Button { poller.refreshNow() } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.tertiary.opacity(0.4))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.trailing, 12)
-            .padding(.top, 6)
         }
         #if os(iOS)
         .fullScreenCover(isPresented: $showFullscreen) {
@@ -581,7 +411,7 @@ private struct OperatorControlRow<Indicator: View>: View {
                             } label: {
                                 Image(systemName: "camera.aperture")
                                     .font(.system(size: 24))
-                                    .foregroundStyle(captureFlash ? Theme.accent : Color.white.opacity(0.5))
+                                    .foregroundStyle(captureFlash ? Color(hex: "FF3B30") : Color.white.opacity(0.5))
                             }
                             .buttonStyle(.plain)
                         }
@@ -780,38 +610,5 @@ private struct ShutterPopover: View {
 
     private func angleLabel(_ a: Double) -> String {
         a.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(a))°" : String(format: "%.1f°", a)
-    }
-}
-
-// MARK: – YOLO info popover
-
-struct YoloInfoPopover: View {
-    let simulationMode: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            infoRow(label: "MODEL", value: "YOLOv8 Nano")
-            HRule()
-            infoRow(label: "MODE", value: simulationMode ? "SIM" : "LIVE")
-            HRule()
-            infoRow(label: "DET FPS", value: "4.0")
-            HRule()
-            infoRow(label: "THRESHOLD", value: "0.72")
-        }
-        .padding(14)
-        .background(Theme.cardBackground)
-        .frame(width: 200)
-    }
-
-    private func infoRow(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label)
-                .font(Theme.dataLabel(size: 9))
-                .tracking(Theme.labelTracking)
-                .foregroundStyle(Theme.tertiary)
-            Text(value)
-                .font(.system(size: 11, weight: .regular, design: .monospaced))
-                .foregroundStyle(.white)
-        }
     }
 }

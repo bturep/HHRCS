@@ -23,8 +23,8 @@ struct StillsGalleryView: View {
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(vm.stills) { still in
                         StillCell(still: still, timeFormatter: Self.timeFormatter) {
-                        vm.stills.removeAll { $0.id == still.id }
-                    }
+                            vm.stills.removeAll { $0.id == still.id }
+                        }
                     }
                 }
                 .padding(Theme.pagePadding)
@@ -55,8 +55,8 @@ private struct StillCell: View {
     let timeFormatter: DateFormatter
     let onDelete: () -> Void
 
-    @State private var showDeleteSheet = false
-    @State private var showFullscreen  = false
+    @State private var showDeleteConfirm = false
+    @State private var showFullscreen    = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -70,7 +70,7 @@ private struct StillCell: View {
                         #if os(iOS)
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         #endif
-                        showDeleteSheet = true
+                        showDeleteConfirm = true
                     }
 
                 Text(still.sourceLabel)
@@ -111,8 +111,16 @@ private struct StillCell: View {
             }
         }
         #endif
-        .sheet(isPresented: $showDeleteSheet) {
-            DeleteConfirmSheet(isPresented: $showDeleteSheet, onDelete: onDelete)
+        .overlay {
+            if showDeleteConfirm {
+                ConfirmationCard(
+                    title:        "DELETE STILL?",
+                    message:      "This cannot be undone.",
+                    confirmLabel: "DELETE",
+                    onConfirm:    { showDeleteConfirm = false; onDelete() },
+                    onCancel:     { showDeleteConfirm = false }
+                )
+            }
         }
     }
 
@@ -138,63 +146,5 @@ private struct StillCell: View {
                 }
                 .buttonStyle(.plain)
             }
-    }
-}
-
-// MARK: – Delete confirm sheet
-
-struct DeleteConfirmSheet: View {
-    @Binding var isPresented: Bool
-    let onDelete: () -> Void
-
-    var body: some View {
-        ZStack {
-            Theme.background.ignoresSafeArea()
-            VStack(spacing: 0) {
-                Spacer()
-                VStack(spacing: 20) {
-                    VStack(spacing: 8) {
-                        Text("DELETE STILL?")
-                            .font(.system(size: 13, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.white)
-                            .tracking(Theme.labelTracking)
-                        Text("This cannot be undone.")
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
-                            .foregroundStyle(Theme.tertiary)
-                    }
-                    HStack(spacing: 0) {
-                        Button {
-                            isPresented = false
-                        } label: {
-                            Text("CANCEL")
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                .tracking(Theme.labelTracking)
-                                .foregroundStyle(Theme.secondary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                        }
-                        .buttonStyle(.plain)
-                        Button {
-                            isPresented = false
-                            onDelete()
-                        } label: {
-                            Text("DELETE")
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                .tracking(Theme.labelTracking)
-                                .foregroundStyle(Theme.recordingRed)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(24)
-                .background(Theme.cardBackground)
-                .cornerRadius(Theme.cardRadius)
-                .padding(.horizontal, 32)
-                Spacer()
-                Spacer()
-            }
-        }
     }
 }

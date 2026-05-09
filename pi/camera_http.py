@@ -103,6 +103,26 @@ class BMPCCCameraClient:
             return True
         return self._put("/system/format", body)
 
+    # ── Shutter / battery / lens ──────────────────────────────────────────────
+
+    def get_shutter_angle(self) -> Optional[float]:
+        data = self._get("/video/shutterAngle")
+        if data is None:
+            return None
+        raw = data.get("shutterAngle")
+        return round(raw / 100.0, 1) if raw is not None else None
+
+    def get_battery(self) -> Optional[int]:
+        data = self._get("/system/batteryLevel")
+        return data.get("batteryLevel") if data else None
+
+    def get_lens_info(self) -> Optional[str]:
+        data = self._get("/lens/iris")
+        if data is None:
+            return None
+        stop = data.get("apertureStop")
+        return f"f/{stop:.1f}" if stop is not None else None
+
     # ── Media ─────────────────────────────────────────────────────────────────
 
     def get_active_media(self) -> Optional[dict]:
@@ -122,6 +142,11 @@ class BMPCCCameraClient:
             "cam_gain":                  None,
             "cam_active_media_slot":     None,
             "cam_remaining_record_time": None,
+            "cam_shutter_angle":         None,
+            "cam_battery":               None,
+            "cam_lens":                  None,
+            "cam_codec_variant":         None,
+            "cam_format_details":        None,
         }
 
         if not self.is_reachable():
@@ -139,11 +164,17 @@ class BMPCCCameraClient:
         try:
             fmt = self.get_format()
             if fmt:
-                result["cam_codec"]      = fmt.get("codec")
-                result["cam_frame_rate"] = fmt.get("frameRate")
+                codec_full = fmt.get("codec") or ""
+                parts = codec_full.split(" ", 1)
+                result["cam_codec"]         = parts[0] if parts else codec_full
+                result["cam_codec_variant"] = parts[1] if len(parts) > 1 else None
+                result["cam_frame_rate"]    = fmt.get("frameRate")
                 res = fmt.get("recordResolution", {})
                 if isinstance(res, dict) and "width" in res and "height" in res:
-                    result["cam_resolution"] = f"{res['width']}x{res['height']}"
+                    w, h = res["width"], res["height"]
+                    result["cam_resolution"]    = f"{w}x{h}"
+                    fps = fmt.get("frameRate", "")
+                    result["cam_format_details"] = f"{w}×{h} @ {fps}" if fps else f"{w}×{h}"
         except Exception as e:
             log.warning(f"[cam] format fetch: {e}")
 
@@ -167,7 +198,25 @@ class BMPCCCameraClient:
             if media:
                 raw = media.get("deviceName") or media.get("slot")
                 result["cam_active_media_slot"] = _SLOT_MAP.get(raw, raw) if raw else None
+                remaining = media.get("remainingRecordTime")
+                if remaining is not None:
+                    result["cam_remaining_record_time"] = int(remaining)
         except Exception as e:
             log.warning(f"[cam] media fetch: {e}")
+
+        try:
+            result["cam_shutter_angle"] = self.get_shutter_angle()
+        except Exception as e:
+            log.warning(f"[cam] shutter angle fetch: {e}")
+
+        try:
+            result["cam_battery"] = self.get_battery()
+        except Exception as e:
+            log.warning(f"[cam] battery fetch: {e}")
+
+        try:
+            result["cam_lens"] = self.get_lens_info()
+        except Exception as e:
+            log.warning(f"[cam] lens fetch: {e}")
 
         return result

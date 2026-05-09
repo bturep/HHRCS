@@ -81,6 +81,12 @@ final class AppSettings: ObservableObject {
     @Published var notifyDeployments: Bool {
         didSet { UserDefaults.standard.set(notifyDeployments, forKey: Keys.notifyDeployments) }
     }
+    @Published var notifySystemAlerts: Bool {
+        didSet { UserDefaults.standard.set(notifySystemAlerts, forKey: Keys.notifySystemAlerts) }
+    }
+    @Published var notifyAgentActivity: Bool {
+        didSet { UserDefaults.standard.set(notifyAgentActivity, forKey: Keys.notifyAgentActivity) }
+    }
 
     // MARK: – Owner Mode
     @Published var ownerModeEnabled: Bool {
@@ -123,6 +129,8 @@ final class AppSettings: ObservableObject {
         static let notifyRecording          = "hhrcs.notifyRecording"
         static let notifyDetections         = "hhrcs.notifyDetections"
         static let notifyDeployments        = "hhrcs.notifyDeployments"
+        static let notifySystemAlerts       = "hhrcs.notifySystemAlerts"
+        static let notifyAgentActivity      = "hhrcs.notifyAgentActivity"
     }
 
     // TODO: INSERT ANTHROPIC_API_KEY HERE
@@ -152,8 +160,10 @@ final class AppSettings: ObservableObject {
         anthropicAPIKey          = ud.string(forKey: Keys.anthropicAPIKey) ?? Self.anthropicAPIKeyDefault
         ownerModeEnabled         = ud.object(forKey: Keys.ownerModeEnabled) as? Bool ?? false
         ownerPassword            = ud.string(forKey: Keys.ownerPassword) ?? "0000"
-        notifyRecording          = ud.object(forKey: Keys.notifyRecording)    as? Bool ?? true
-        notifyDetections         = ud.object(forKey: Keys.notifyDetections)   as? Bool ?? true
-        notifyDeployments        = ud.object(forKey: Keys.notifyDeployments)  as? Bool ?? true
+        notifyRecording          = ud.object(forKey: Keys.notifyRecording)       as? Bool ?? true
+        notifyDetections         = ud.object(forKey: Keys.notifyDetections)      as? Bool ?? true
+        notifyDeployments        = ud.object(forKey: Keys.notifyDeployments)     as? Bool ?? true
+        notifySystemAlerts       = ud.object(forKey: Keys.notifySystemAlerts)    as? Bool ?? true
+        notifyAgentActivity      = ud.object(forKey: Keys.notifyAgentActivity)   as? Bool ?? false
     }
 }

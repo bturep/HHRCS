@@ -47,8 +47,6 @@ struct StillFrameView: View {
         #endif
     }
 
-    // MARK: – Capturing indicator
-
     private var capturingView: some View {
         VStack(spacing: 12) {
             Spacer()
@@ -64,8 +62,6 @@ struct StillFrameView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: – Empty state
-
     private var emptyState: some View {
         VStack(spacing: 16) {
             Spacer()
@@ -80,7 +76,6 @@ struct StillFrameView: View {
         }
         .frame(maxWidth: .infinity)
     }
-
 }
 
 // MARK: – Fullscreen viewer with pinch-to-zoom + pan
@@ -95,15 +90,12 @@ struct FullscreenImageView: View {
     @State private var lastScale:        CGFloat = 1.0
     @State private var offset:           CGSize  = .zero
     @State private var lastOffset:       CGSize  = .zero
-    @State private var showDeleteSheet:  Bool    = false
+    @State private var showDeleteConfirm: Bool   = false
 
     var body: some View {
-        // ZStack does NOT have ignoresSafeArea — controls layer respects safe area automatically.
-        // Background and image each opt out individually, extending behind Dynamic Island.
         ZStack {
             Theme.background.ignoresSafeArea()
 
-            // Image in its own GeometryReader so geo.size covers the full screen for clamping.
             GeometryReader { geo in
                 Image(platformImage: image)
                     .resizable()
@@ -145,14 +137,12 @@ struct FullscreenImageView: View {
                                 #if os(iOS)
                                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                                 #endif
-                                showDeleteSheet = true
+                                showDeleteConfirm = true
                             }
                     )
             }
             .ignoresSafeArea()
 
-            // Controls float over the image. ZStack respects safe area so this VStack
-            // starts below the Dynamic Island — no manual inset calculation needed.
             VStack {
                 HStack {
                     if let label = sourceLabel {
@@ -175,11 +165,19 @@ struct FullscreenImageView: View {
                 .padding(.top, 8)
                 Spacer()
             }
-        }
-        .sheet(isPresented: $showDeleteSheet) {
-            DeleteConfirmSheet(isPresented: $showDeleteSheet) {
-                isPresented = false
-                onDelete?()
+
+            if showDeleteConfirm {
+                ConfirmationCard(
+                    title:        "DELETE STILL?",
+                    message:      "This cannot be undone.",
+                    confirmLabel: "DELETE",
+                    onConfirm: {
+                        showDeleteConfirm = false
+                        isPresented = false
+                        onDelete?()
+                    },
+                    onCancel: { showDeleteConfirm = false }
+                )
             }
         }
     }

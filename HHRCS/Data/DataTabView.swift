@@ -77,6 +77,35 @@ struct DataTabView: View {
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .frame(maxWidth: .infinity)
+
+                HStack(alignment: .top, spacing: 0) {
+                    MetricCell(
+                        value: vm.camShutterAngle.map { String(format: "%.1f°", $0) } ?? "—",
+                        label: "SHUTTER ANG"
+                    )
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(
+                        value: vm.camBattery.map { "\($0)%" } ?? "—",
+                        label: "BATTERY"
+                    )
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(
+                        value: vm.camLens ?? "—",
+                        label: "LENS"
+                    )
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .frame(maxWidth: .infinity)
+
+                HStack(alignment: .top, spacing: 0) {
+                    MetricCell(value: vm.camCodecVariant ?? "—", label: "CODEC VAR")
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(value: vm.camFormatDetails ?? "—", label: "FORMAT")
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    Spacer()
+                        .frame(maxWidth: .infinity)
+                }
+                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -193,16 +222,23 @@ struct DataTabView: View {
     private var storageSection: some View {
         SectionCard(title: "STORAGE") {
             VStack(spacing: 12) {
-                BarCell(
-                    label:    "HOUSE DRIVE",
-                    percent:  vm.driveUsedPercent,
-                    subtitle: String(format: "%.1f TB of %.1f TB", vm.driveUsedTB, vm.driveTotalTB)
-                )
+                if !vm.externalDrives.isEmpty {
+                    ForEach(vm.externalDrives) { drive in
+                        BarCell(
+                            label:    drive.name.uppercased(),
+                            percent:  drive.usedPercent,
+                            subtitle: String(format: "%.2f TB of %.2f TB", drive.usedTB, drive.totalTB)
+                        )
+                        if drive.id != vm.externalDrives.last?.id {
+                            HRule()
+                        }
+                    }
+                }
 
                 if let usedPct = vm.storageUsedPct,
                    let freeGb  = vm.storageFreeGb,
                    let totalGb = vm.storageTotalGb {
-                    HRule()
+                    if !vm.externalDrives.isEmpty { HRule() }
                     BarCell(
                         label:    "SSD",
                         percent:  usedPct,
