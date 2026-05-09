@@ -15,6 +15,10 @@ private enum CameraPage: Int, CaseIterable {
     }
 }
 
+private enum ActiveStrip {
+    case iso, wb, shutter
+}
+
 struct CameraTabView: View {
     var isActive: Bool = true
 
@@ -22,10 +26,9 @@ struct CameraTabView: View {
     @EnvironmentObject var orientationObserver: DeviceOrientationObserver
     @ObservedObject private var settings = AppSettings.shared
 
-    @State private var currentPage        = CameraPage.still
-    @State private var showISOPopover     = false
-    @State private var showWBPopover      = false
-    @State private var showShutterPopover = false
+    @State private var currentPage  = CameraPage.still
+    @State private var activeStrip: ActiveStrip? = nil
+    @State private var breatheOpacity: Double = 1.0
 
     // HDMI still: POST /hdmi/still → GET /hdmi/stills/latest
     @StateObject private var hdmiPoller = StillPoller(
@@ -70,52 +73,62 @@ struct CameraTabView: View {
 
                     HRule()
 
-                    if currentPage == .still {
-                        stillDataRow
-                        HRule()
-                    }
+                    // Feed + chip strip overlay
+                    ZStack(alignment: .bottom) {
+                        TabView(selection: $currentPage) {
+                            StillImagePage(poller: hdmiPoller, recordingState: vm.recordingState)
+                                .tag(CameraPage.still)
+                            StillImagePage(poller: camPoller)
+                                .tag(CameraPage.live)
+                        }
+                        .tabViewStyle(.page(indexDisplayMode: .never))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    TabView(selection: $currentPage) {
-                        StillImagePage(poller: hdmiPoller, recordingState: vm.recordingState)
-                            .tag(CameraPage.still)
-                        StillImagePage(poller: camPoller)
-                            .tag(CameraPage.live)
+                        if activeStrip != nil {
+                            // Transparent area — tap anywhere in feed to dismiss
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    withAnimation(.easeInOut(duration: 0.15)) { activeStrip = nil }
+                                }
+                            // Chip strip — on top of dismiss layer
+                            chipStripView
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                                    removal:   .move(edge: .bottom).combined(with: .opacity)
+                                ))
+                        }
                     }
-                    .tabViewStyle(.page(indexDisplayMode: .never))
+                    .frame(maxHeight: .infinity)
+
+                    // Bottom block
+                    bottomBlock
 
                     HRule()
-
-                    switch currentPage {
-                    case .still:
-                        OperatorControlRow(
-                            isOwner: settings.ownerModeEnabled,
-                            recordingState: vm.recordingState,
-                            captureIsPlaceholder: false,
-                            onRecord: { Task { await vm.toggleBmpccRecord() } },
-                            onCapture: { Task { await vm.captureHdmiStill() } }
-                        )
-                    case .live:
-                        OperatorControlRow(
-                            isOwner: settings.ownerModeEnabled,
-                            recordingState: .idle,
-                            captureIsPlaceholder: false,
-                            showRecord: false,
-                            onRecord: {},
-                            onCapture: { Task { await vm.captureStill() } }
-                        )
-                    }
                 }
             }
         }
         .background(Theme.background)
         .onAppear { startActivePoller() }
         .onDisappear { camPoller.stop(); hdmiPoller.stop() }
-        .onChange(of: currentPage) { _, _ in rebalancePollers() }
+        .onChange(of: currentPage) { _, _ in
+            activeStrip = nil
+            rebalancePollers()
+        }
         .onChange(of: isActive) { _, active in
             if active { startActivePoller() }
             else { camPoller.stop(); hdmiPoller.stop() }
         }
         .onChange(of: settings.piServerURL) { _, _ in updatePollerURLs() }
+        .onChange(of: vm.recordingState) { _, state in
+            if state == .finalizing {
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                    breatheOpacity = 0.4
+                }
+            } else {
+                breatheOpacity = 1.0
+            }
+        }
     }
 
     // MARK: – Poller lifecycle
@@ -149,119 +162,6 @@ struct CameraTabView: View {
         camPoller.fetchURL    = makeURL("/stills/latest")
     }
 
-    // MARK: – Data row (BMPCC page only)
-
-    private var stillDataRow: some View {
-        HStack(spacing: 0) {
-            if vm.yoloLocked && vm.isRecording {
-                Text("AUTO")
-                    .font(Theme.label(size: 9))
-                    .tracking(1.2)
-                    .foregroundStyle(settings.activeColor)
-                    .padding(.trailing, 10)
-            }
-
-            Group {
-                if settings.ownerModeEnabled {
-                    Button { showISOPopover = true } label: {
-                        Text("ISO \(vm.iso)")
-                            .foregroundStyle(.white)
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showISOPopover,
-                             attachmentAnchor: .point(.bottom),
-                             arrowEdge: .top) {
-                        ISOPopover()
-                            .environmentObject(vm)
-                            .frame(width: 280)
-                            .presentationCompactAdaptation(.popover)
-                    }
-                } else {
-                    Text("ISO \(vm.iso)")
-                        .foregroundStyle(.white)
-                }
-            }
-            .font(Theme.body(size: 11))
-
-            Spacer()
-
-            Group {
-                if settings.ownerModeEnabled {
-                    Button { showWBPopover = true } label: {
-                        Text("\(vm.wbKelvin)K")
-                            .foregroundStyle(.white)
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showWBPopover,
-                             attachmentAnchor: .point(.bottom),
-                             arrowEdge: .top) {
-                        WBPopover()
-                            .environmentObject(vm)
-                            .frame(width: 280)
-                            .presentationCompactAdaptation(.popover)
-                    }
-                } else {
-                    Text("\(vm.wbKelvin)K")
-                        .foregroundStyle(.white)
-                }
-            }
-            .font(Theme.body(size: 11))
-
-            Spacer()
-
-            Group {
-                if settings.ownerModeEnabled {
-                    Button { showShutterPopover = true } label: {
-                        Text(shutterLabel)
-                            .foregroundStyle(.white)
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showShutterPopover,
-                             attachmentAnchor: .point(.bottom),
-                             arrowEdge: .top) {
-                        ShutterPopover()
-                            .environmentObject(vm)
-                            .frame(width: 280)
-                            .presentationCompactAdaptation(.popover)
-                    }
-                } else {
-                    Text(shutterLabel)
-                        .foregroundStyle(.white)
-                }
-            }
-            .font(Theme.body(size: 11))
-
-            Spacer()
-
-            HStack(spacing: 6) {
-                if let updated = hdmiPoller.lastUpdated {
-                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                        let elapsed = Int(max(0, ctx.date.timeIntervalSince(updated)))
-                        Text("\(elapsed)s")
-                            .font(.system(size: 9, weight: .regular, design: .monospaced))
-                            .foregroundStyle(.white)
-                    }
-                }
-                Button { hdmiPoller.refreshNow() } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 12)
-        .frame(height: 32)
-        .frame(maxWidth: .infinity)
-    }
-
-    private var shutterLabel: String {
-        let a = vm.shutterAngle
-        return a.truncatingRemainder(dividingBy: 1) == 0
-            ? "\(Int(a))°"
-            : String(format: "%.1f°", a)
-    }
-
     // MARK: – Page indicator
 
     private var pageIndicator: some View {
@@ -271,9 +171,8 @@ struct CameraTabView: View {
                     withAnimation(.easeInOut(duration: 0.25)) { currentPage = page }
                 } label: {
                     Text(page.label)
-                        .font(.system(size: 11,
-                                      weight: page == currentPage ? .semibold : .regular,
-                                      design: .monospaced))
+                        .font(Theme.label(size: 11))
+                        .fontWeight(page == currentPage ? .semibold : .regular)
                         .tracking(Theme.labelTracking)
                         .foregroundStyle(page == currentPage ? settings.activeColor : Theme.tertiary)
                 }
@@ -282,6 +181,279 @@ struct CameraTabView: View {
             }
             Spacer()
         }
+    }
+
+    // MARK: – Bottom block (ISO / WB / SHUTTER / refresh + record + still)
+
+    private var bottomBlock: some View {
+        HStack(alignment: .center, spacing: 0) {
+            switch currentPage {
+            case .still:
+                // Record button (fixed frame — FINALIZING overlaid, never shifts layout)
+                recordButtonView
+                    .frame(maxWidth: .infinity)
+
+                if settings.ownerModeEnabled {
+                    // ISO
+                    isoButton
+                        .frame(maxWidth: .infinity)
+
+                    // WB
+                    wbButton
+                        .frame(maxWidth: .infinity)
+
+                    // SHUTTER
+                    shutterButton
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Spacer().frame(maxWidth: .infinity)
+                    Spacer().frame(maxWidth: .infinity)
+                    Spacer().frame(maxWidth: .infinity)
+                }
+
+                // Refresh countdown + button
+                refreshControl
+                    .frame(maxWidth: .infinity)
+
+                // Still (camera.aperture)
+                stillCaptureButton(for: .still)
+                    .frame(maxWidth: .infinity)
+
+            case .live:
+                Spacer()
+                stillCaptureButton(for: .live)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(height: 44)
+        .padding(.horizontal, 8)
+        .padding(.bottom, 10)
+        .background(Theme.background)
+    }
+
+    // Record button — fixed outer frame; FINALIZING overlaid above icon, nothing shifts
+    @ViewBuilder
+    private var recordButtonView: some View {
+        ZStack {
+            Button(action: { Task { await vm.toggleBmpccRecord() } }) {
+                Image(systemName: vm.recordingState == .recording ? "stop.circle.fill" : "record.circle")
+                    .symbolRenderingMode(.monochrome)
+                    .font(.system(size: 26))
+                    .foregroundStyle(
+                        vm.recordingState == .recording  ? Theme.recordingRed :
+                        vm.recordingState == .finalizing ? Theme.text3 :
+                        Theme.tertiary
+                    )
+                    .opacity(vm.recordingState == .finalizing ? breatheOpacity : 1.0)
+            }
+            .buttonStyle(.plain)
+            .disabled(vm.recordingState == .finalizing)
+        }
+        .frame(width: 36, height: 36)
+        .overlay(alignment: .top) {
+            if vm.recordingState == .finalizing {
+                Text("FIN")
+                    .font(.system(size: 7, weight: .regular, design: .monospaced))
+                    .tracking(0.8)
+                    .foregroundStyle(Theme.text2)
+                    .opacity(breatheOpacity)
+                    .offset(y: -11)
+            }
+        }
+    }
+
+    // ISO tappable label
+    private var isoButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                activeStrip = activeStrip == .iso ? nil : .iso
+            }
+        } label: {
+            VStack(spacing: 1) {
+                Text("\(vm.iso)")
+                    .font(Theme.label(size: 11))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(activeStrip == .iso ? settings.activeColor : Theme.text2)
+                Text("ISO")
+                    .font(Theme.label(size: 8))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(Theme.text3)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // WB tappable label
+    private var wbButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                activeStrip = activeStrip == .wb ? nil : .wb
+            }
+        } label: {
+            VStack(spacing: 1) {
+                Text("\(vm.wbKelvin)K")
+                    .font(Theme.label(size: 11))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(activeStrip == .wb ? settings.activeColor : Theme.text2)
+                Text("WB")
+                    .font(Theme.label(size: 8))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(Theme.text3)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // SHUTTER tappable label
+    private var shutterButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                activeStrip = activeStrip == .shutter ? nil : .shutter
+            }
+        } label: {
+            VStack(spacing: 1) {
+                Text(shutterLabelText)
+                    .font(Theme.label(size: 11))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(activeStrip == .shutter ? settings.activeColor : Theme.text2)
+                Text("SHUTTER")
+                    .font(Theme.label(size: 8))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(Theme.text3)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var shutterLabelText: String {
+        let a = vm.shutterAngle
+        return a.truncatingRemainder(dividingBy: 1) == 0
+            ? "\(Int(a))°"
+            : String(format: "%.1f°", a)
+    }
+
+    // Refresh countdown + button
+    private var refreshControl: some View {
+        HStack(spacing: 4) {
+            if let updated = hdmiPoller.lastUpdated {
+                TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                    let elapsed = Int(max(0, ctx.date.timeIntervalSince(updated)))
+                    Text("\(elapsed)s")
+                        .font(.system(size: 9, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.text3)
+                }
+            }
+            Button { hdmiPoller.refreshNow() } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.text2)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // Still capture button
+    @ViewBuilder
+    private func stillCaptureButton(for page: CameraPage) -> some View {
+        if settings.ownerModeEnabled {
+            StillCaptureButton {
+                Task {
+                    if page == .still {
+                        await vm.captureHdmiStill()
+                    } else {
+                        await vm.captureStill()
+                    }
+                }
+            }
+        } else {
+            Color.clear.frame(width: 28, height: 28)
+        }
+    }
+
+    // MARK: – Chip strips (inline, overlays bottom of feed)
+
+    @ViewBuilder
+    private var chipStripView: some View {
+        switch activeStrip {
+        case .iso:     isoChipStrip
+        case .wb:      wbChipStrip
+        case .shutter: shutterChipStrip
+        case nil:      EmptyView()
+        }
+    }
+
+    private var isoChipStrip: some View {
+        let values = [100, 200, 400, 800, 1600, 3200, 6400, 12800]
+        return chipStripContainer {
+            ForEach(values, id: \.self) { v in
+                chipButton(label: "\(v)", isActive: vm.iso == v) {
+                    vm.iso = v
+                    Task { await vm.setISO(v) }
+                    withAnimation(.easeInOut(duration: 0.15)) { activeStrip = nil }
+                }
+            }
+        }
+    }
+
+    private var wbChipStrip: some View {
+        let values = [2500, 3200, 4000, 4500, 5600, 6500, 7500]
+        return chipStripContainer {
+            ForEach(values, id: \.self) { v in
+                chipButton(label: "\(v)K", isActive: vm.wbKelvin == v) {
+                    vm.wbKelvin = v
+                    Task { await vm.setWB(v) }
+                    withAnimation(.easeInOut(duration: 0.15)) { activeStrip = nil }
+                }
+            }
+        }
+    }
+
+    private var shutterChipStrip: some View {
+        let angles: [Double] = [45, 90, 135, 172.8, 180, 270, 360]
+        return chipStripContainer {
+            ForEach(angles, id: \.self) { a in
+                let label = a.truncatingRemainder(dividingBy: 1) == 0
+                    ? "\(Int(a))°"
+                    : String(format: "%.1f°", a)
+                chipButton(label: label, isActive: vm.shutterAngle == a) {
+                    vm.shutterAngle = a
+                    Task { await vm.setShutterAngle(a) }
+                    withAnimation(.easeInOut(duration: 0.15)) { activeStrip = nil }
+                }
+            }
+        }
+    }
+
+    private func chipStripContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                content()
+            }
+            .padding(.horizontal, 12)
+            .frame(minWidth: 0)
+        }
+        .frame(height: 40)
+        .frame(maxWidth: .infinity)
+        .background(Theme.surface.opacity(0.98))
+    }
+
+    private func chipButton(label: String, isActive: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(Theme.label(size: 11))
+                .fontWeight(isActive ? .semibold : .regular)
+                .tracking(Theme.labelTracking)
+                .foregroundStyle(isActive ? Theme.background : Theme.text2)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(isActive ? settings.activeColor : Color.clear)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(isActive ? Color.clear : Theme.rule, lineWidth: Theme.ruleWidth)
+                )
+                .cornerRadius(4)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -312,17 +484,6 @@ private struct StillImagePage: View {
                         .foregroundStyle(Theme.tertiary)
                 }
             }
-
-            if recordingState == .finalizing {
-                VStack {
-                    Spacer()
-                    Text("FINALIZING CLIP")
-                        .font(Theme.label(size: 9))
-                        .tracking(1.5)
-                        .foregroundStyle(Theme.text2)
-                        .padding(.bottom, 8)
-                }
-            }
         }
         .overlay(alignment: .topLeading) {
             if poller.isManual {
@@ -350,249 +511,24 @@ private struct StillImagePage: View {
     }
 }
 
-// MARK: – Shared operator control row (BMPCC + CAM)
+// MARK: – Still capture button
 
-private struct OperatorControlRow: View {
-    let isOwner: Bool
-    var recordingState: RecordingState = .idle
-    let captureIsPlaceholder: Bool
-    var showRecord: Bool = true
-    let onRecord: () -> Void
-    let onCapture: () -> Void
-
-    @State private var captureFlash    = false
-    @State private var breatheOpacity: Double = 1.0
+private struct StillCaptureButton: View {
+    let action: () -> Void
+    @State private var captureFlash = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            if showRecord {
-                Group {
-                    if isOwner {
-                        recordButton
-                    } else {
-                        Color.clear
-                    }
-                }
-                .frame(maxWidth: .infinity)
-            } else {
-                Spacer()
+        Button {
+            withAnimation(.easeOut(duration: 0.08)) { captureFlash = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                withAnimation(.easeIn(duration: 0.08)) { captureFlash = false }
             }
-
-            Group {
-                if isOwner {
-                    if captureIsPlaceholder {
-                        Text("HDMI PREVIEW")
-                            .font(Theme.dataLabel(size: 8))
-                            .tracking(Theme.labelTracking)
-                            .foregroundStyle(Color.white.opacity(0.4))
-                    } else {
-                        Button {
-                            withAnimation(.easeOut(duration: 0.08)) { captureFlash = true }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                                withAnimation(.easeIn(duration: 0.08)) { captureFlash = false }
-                            }
-                            onCapture()
-                        } label: {
-                            Image(systemName: "camera.aperture")
-                                .font(.system(size: 24))
-                                .foregroundStyle(captureFlash ? Theme.recordingRed : Color.white.opacity(0.5))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } else {
-                    Color.clear
-                }
-            }
-            .frame(maxWidth: .infinity)
+            action()
+        } label: {
+            Image(systemName: "camera.aperture")
+                .font(.system(size: 24))
+                .foregroundStyle(captureFlash ? Theme.recordingRed : Color.white.opacity(0.5))
         }
-        .frame(height: 44)
-        .padding(.bottom, 10)
-        .background(Theme.background)
-    }
-
-    @ViewBuilder
-    private var recordButton: some View {
-        switch recordingState {
-        case .recording:
-            Button(action: onRecord) {
-                Image(systemName: "stop.circle.fill")
-                    .symbolRenderingMode(.monochrome)
-                    .font(.system(size: 26))
-                    .foregroundStyle(Theme.recordingRed)
-            }
-            .buttonStyle(.plain)
-        case .finalizing:
-            HStack(spacing: 5) {
-                Image(systemName: "record.circle")
-                    .font(.system(size: 22))
-                    .foregroundStyle(Theme.text2)
-                Text("FINALIZING")
-                    .font(Theme.label(size: 8))
-                    .tracking(1.0)
-                    .foregroundStyle(Theme.text2)
-            }
-            .opacity(breatheOpacity)
-            .allowsHitTesting(false)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                    breatheOpacity = 0.4
-                }
-            }
-            .onDisappear { breatheOpacity = 1.0 }
-        case .idle:
-            Button(action: onRecord) {
-                Image(systemName: "record.circle")
-                    .symbolRenderingMode(.monochrome)
-                    .font(.system(size: 26))
-                    .foregroundStyle(Theme.tertiary)
-            }
-            .buttonStyle(.plain)
-        }
-    }
-}
-
-// MARK: – ISO popover
-
-private struct ISOPopover: View {
-    @EnvironmentObject var vm: DataViewModel
-    @ObservedObject private var settings = AppSettings.shared
-    private let isoStops = [100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("ISO")
-                    .font(Theme.dataLabel(size: 9))
-                    .tracking(Theme.labelTracking)
-                    .foregroundStyle(Theme.tertiary)
-                Spacer()
-                Text("\(vm.iso)")
-                    .font(Theme.body(size: 13))
-                    .foregroundStyle(.white)
-            }
-            Slider(
-                value: Binding(
-                    get: { Double(isoStops.firstIndex(of: vm.iso) ?? 2) },
-                    set: { vm.iso = isoStops[Int($0.rounded())] }
-                ),
-                in: 0...Double(isoStops.count - 1),
-                step: 1
-            ) { editing in
-                if !editing { Task { await vm.setISO(vm.iso) } }
-            }
-            .tint(Theme.text1)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.cardBackground)
-    }
-}
-
-// MARK: – WB popover
-
-private struct WBPopover: View {
-    @EnvironmentObject var vm: DataViewModel
-    @ObservedObject private var settings = AppSettings.shared
-    private let presets: [(String, Int)] = [
-        ("TUNG", 3200), ("FLUO", 4000), ("SUN", 5600), ("CLOUD", 6500), ("SHADE", 7500)
-    ]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("WHITE BALANCE")
-                    .font(Theme.dataLabel(size: 9))
-                    .tracking(Theme.labelTracking)
-                    .foregroundStyle(Theme.tertiary)
-                Spacer()
-                Text("\(vm.wbKelvin) K")
-                    .font(Theme.body(size: 13))
-                    .foregroundStyle(.white)
-            }
-            Slider(
-                value: Binding(
-                    get: { Double(vm.wbKelvin) },
-                    set: { vm.wbKelvin = Int($0.rounded()) }
-                ),
-                in: 2500...10000,
-                step: 100
-            ) { editing in
-                if !editing { Task { await vm.setWB(vm.wbKelvin) } }
-            }
-            .tint(Theme.text1)
-
-            HStack(spacing: 0) {
-                ForEach(presets, id: \.0) { name, kelvin in
-                    Button(name) {
-                        vm.wbKelvin = kelvin
-                        Task { await vm.setWB(kelvin) }
-                    }
-                    .font(Theme.label(size: 9))
-                    .tracking(1.0)
-                    .foregroundStyle(vm.wbKelvin == kelvin ? settings.activeColor : Theme.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 2)
-                            .stroke(
-                                vm.wbKelvin == kelvin ? settings.activeColor.opacity(0.5) : Theme.rule,
-                                lineWidth: Theme.ruleWidth
-                            )
-                    )
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.cardBackground)
-    }
-}
-
-// MARK: – Shutter popover
-
-private struct ShutterPopover: View {
-    @EnvironmentObject var vm: DataViewModel
-    @ObservedObject private var settings = AppSettings.shared
-    private let options: [Double] = [90, 120, 172.8, 180]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("SHUTTER ANGLE")
-                .font(Theme.dataLabel(size: 9))
-                .tracking(Theme.labelTracking)
-                .foregroundStyle(Theme.tertiary)
-
-            HStack(spacing: 0) {
-                ForEach(options, id: \.self) { angle in
-                    Button(angleLabel(angle)) {
-                        vm.shutterAngle = angle
-                        Task { await vm.setShutterAngle(angle) }
-                    }
-                    .font(Theme.body(size: 11))
-                    .foregroundStyle(vm.shutterAngle == angle ? settings.activeColor : Theme.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 2)
-                            .stroke(
-                                vm.shutterAngle == angle ? settings.activeColor.opacity(0.5) : Theme.rule,
-                                lineWidth: Theme.ruleWidth
-                            )
-                    )
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.cardBackground)
-    }
-
-    private func angleLabel(_ a: Double) -> String {
-        a.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(a))°" : String(format: "%.1f°", a)
+        .buttonStyle(.plain)
     }
 }

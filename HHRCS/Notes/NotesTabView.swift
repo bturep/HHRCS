@@ -18,6 +18,8 @@ struct NotesTabView: View {
     @State private var startupScrollDone  = false
     @State private var startupFiredAt: Date? = nil
     @State private var startupChatWasEmpty = true
+    @State private var pendingUserMessage: String? = nil
+    @State private var isAgentTyping = false
 
     @FocusState private var composerFocused: Bool
 
@@ -39,9 +41,9 @@ struct NotesTabView: View {
                 ForEach(FieldSegment.allCases, id: \.self) { s in
                     Button(action: { withAnimation(.easeInOut(duration: 0.15)) { segment = s } }) {
                         Text(s.rawValue)
-                            .font(Theme.dataLabel(size: 11))
+                            .font(Theme.label(size: 11))
                             .tracking(Theme.labelTracking)
-                            .foregroundStyle(segment == s ? Theme.text1 : Theme.tertiary)
+                            .foregroundStyle(segment == s ? settings.activeColor : Theme.tertiary)
                             .fontWeight(segment == s ? .semibold : .regular)
                     }
                     .buttonStyle(.plain)
@@ -111,6 +113,13 @@ struct NotesTabView: View {
                         ForEach(queries) { entry in
                             ChatExchangeView(entry: entry)
                         }
+                        // Optimistic: show pending user message + typing indicator
+                        if let pending = pendingUserMessage {
+                            pendingUserBubble(text: pending)
+                        }
+                        if isAgentTyping {
+                            TypingIndicatorView()
+                        }
                         Color.clear.frame(height: 0).id("bottomAnchor")
                     }
                     .padding(.horizontal, Theme.pagePadding)
@@ -126,7 +135,12 @@ struct NotesTabView: View {
                     startupFiredAt      = Date()
                     Task { await fireStartupQuery() }
                 }
-                .onChange(of: queries.count) {
+                .onChange(of: queries.count) { oldCount, newCount in
+                    // New entry arrived — clear pending state
+                    if newCount > oldCount {
+                        pendingUserMessage = nil
+                        isAgentTyping = false
+                    }
                     // Anchor startup response to top only when chat was empty at launch
                     if startupQueryFired && !hasSentQuery && !startupScrollDone && startupChatWasEmpty,
                        let firedAt = startupFiredAt,
@@ -140,6 +154,11 @@ struct NotesTabView: View {
                         withAnimation(.none) { proxy.scrollTo("bottomAnchor", anchor: .bottom) }
                     }
                 }
+                .onChange(of: isAgentTyping) { _, typing in
+                    if typing {
+                        withAnimation(.none) { proxy.scrollTo("bottomAnchor", anchor: .bottom) }
+                    }
+                }
                 .onChange(of: dataVM.deploymentChangeCount) {
                     // New deployment created — reset chat and fire a fresh startup summary
                     hasSentQuery       = false
@@ -147,6 +166,8 @@ struct NotesTabView: View {
                     startupScrollDone  = false
                     startupFiredAt     = nil
                     startupChatWasEmpty = true
+                    pendingUserMessage  = nil
+                    isAgentTyping      = false
                     startupQueryFired  = true
                     startupFiredAt     = Date()
                     Task { await fireStartupQuery() }
@@ -193,14 +214,20 @@ struct NotesTabView: View {
         agentQueryDraft = ""
         composerFocused = false
         hasSentQuery = true
+        pendingUserMessage = text
+        isAgentTyping = true
         Task {
             let base = AppSettings.shared.piServerURL
-            guard !base.isEmpty, let url = URL(string: base + "/agent-log/query") else { return }
+            guard !base.isEmpty, let url = URL(string: base + "/agent-log/query") else {
+                pendingUserMessage = nil
+                isAgentTyping = false
+                return
+            }
             var req = URLRequest(url: url)
             req.httpMethod = "POST"
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try? JSONSerialization.data(withJSONObject: ["question": text])
-            req.timeoutInterval = 10
+            req.timeoutInterval = 30
             _ = try? await URLSession.shared.data(for: req)
         }
     }
@@ -215,10 +242,62 @@ struct NotesTabView: View {
     }
 }
 
+// MARK: – Pending user bubble (optimistic render)
+
+extension NotesTabView {
+    @ViewBuilder
+    func pendingUserBubble(text: String) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            Spacer(minLength: 60)
+            Text(text)
+                .font(.system(size: 12, weight: .regular, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Theme.secondary, lineWidth: 1)
+                )
+        }
+    }
+}
+
+// MARK: – Typing indicator (three pulsing dots)
+
+private struct TypingIndicatorView: View {
+    @ObservedObject private var settings = AppSettings.shared
+    @State private var phase: Int = 0
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            HStack(spacing: 5) {
+                ForEach(0..<3, id: \.self) { i in
+                    Circle()
+                        .fill(Theme.text3)
+                        .frame(width: 5, height: 5)
+                        .opacity(i == phase ? 1.0 : 0.3)
+                        .animation(.easeInOut(duration: 0.3), value: phase)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(settings.activeColor.opacity(0.15))
+            .cornerRadius(10)
+            Spacer(minLength: 60)
+        }
+        .onAppear {
+            Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { _ in
+                phase = (phase + 1) % 3
+            }
+        }
+    }
+}
+
 // MARK: – Chat exchange (user question + agent response)
 
 private struct ChatExchangeView: View {
     let entry: AILogEntry
+    @ObservedObject private var settings = AppSettings.shared
 
     private static let timeFmt: DateFormatter = {
         let f = DateFormatter()
@@ -250,16 +329,16 @@ private struct ChatExchangeView: View {
                 }
             }
 
-            // Agent bubble — left-aligned
+            // Agent bubble — left-aligned, warm tint background
             HStack(alignment: .top, spacing: 0) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(entry.content)
                         .font(.system(size: 12, weight: .regular, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.75))
+                        .foregroundStyle(Theme.text1)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(Theme.cardBackground)
+                        .background(settings.activeColor.opacity(0.15))
                         .cornerRadius(10)
                     Text(Self.timeFmt.string(from: entry.timestamp))
                         .font(.system(size: 10, weight: .regular, design: .monospaced))

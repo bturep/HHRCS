@@ -2,7 +2,7 @@ import SwiftUI
 
 struct DataTabView: View {
     @EnvironmentObject var vm: DataViewModel
-
+    @ObservedObject private var settings = AppSettings.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -10,7 +10,7 @@ struct DataTabView: View {
                 Text("DATA")
                     .font(Theme.label(size: 11))
                     .tracking(Theme.labelTracking)
-                    .foregroundStyle(Theme.text1)
+                    .foregroundStyle(settings.activeColor)
                     .fontWeight(.semibold)
                 Spacer()
             }
@@ -117,21 +117,18 @@ struct DataTabView: View {
                     MetricCell(
                         value: vm.enclosureTempC.map { String(format: "%.1f°C", $0) } ?? "—",
                         label: "TEMPERATURE",
-                        valueSize: 17,
-                        valueColor: vm.enclosureTempC == nil ? Theme.tertiary : .white
+                        valueSize: 17
                     )
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     MetricCell(
                         value: vm.enclosureHumidity.map { String(format: "%.0f%%", $0) } ?? "—",
                         label: "HUMIDITY",
-                        valueSize: 17,
-                        valueColor: vm.enclosureHumidity == nil ? Theme.tertiary : .white
+                        valueSize: 17
                     )
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     MetricCell(
                         value: vm.dewPoint.map { String(format: "%.1f°C", $0) } ?? "—",
-                        label: "DEW POINT",
-                        valueColor: vm.dewPoint == nil ? Theme.tertiary : .white
+                        label: "DEW POINT"
                     )
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
@@ -141,8 +138,7 @@ struct DataTabView: View {
                 HStack(alignment: .top, spacing: 0) {
                     MetricCell(
                         value: vm.pressure.map { String(format: "%.1f", $0) } ?? "—",
-                        label: "PRESSURE hPa",
-                        valueColor: vm.pressure == nil ? Theme.tertiary : .white
+                        label: "PRESSURE hPa"
                     )
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     MetricCell(value: String(format: "%.1f°C", vm.cpuTemp), label: "CPU TEMP", valueSize: 17)

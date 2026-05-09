@@ -55,7 +55,7 @@ struct SettingsTabView: View {
                 Text("SETTINGS")
                     .font(Theme.label(size: 11))
                     .tracking(Theme.labelTracking)
-                    .foregroundStyle(Theme.text1)
+                    .foregroundStyle(settings.activeColor)
                     .fontWeight(.semibold)
                 Spacer()
             }
