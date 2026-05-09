@@ -72,6 +72,7 @@ struct CameraTabView: View {
                         .frame(height: 32)
 
                     HRule()
+                        .padding(.horizontal, Theme.pagePadding)
 
                     // Feed + chip strip overlay
                     ZStack(alignment: .bottom) {
@@ -202,18 +203,20 @@ struct CameraTabView: View {
                     wbButton
                         .frame(maxWidth: .infinity)
 
+                    // Refresh countdown + button (center)
+                    refreshControl
+                        .frame(maxWidth: .infinity)
+
                     // SHUTTER
                     shutterButton
                         .frame(maxWidth: .infinity)
                 } else {
                     Spacer().frame(maxWidth: .infinity)
                     Spacer().frame(maxWidth: .infinity)
+                    refreshControl
+                        .frame(maxWidth: .infinity)
                     Spacer().frame(maxWidth: .infinity)
                 }
-
-                // Refresh countdown + button
-                refreshControl
-                    .frame(maxWidth: .infinity)
 
                 // Still (camera.aperture)
                 stillCaptureButton(for: .still)
@@ -396,12 +399,15 @@ struct CameraTabView: View {
     }
 
     private var wbChipStrip: some View {
-        let values = [2500, 3200, 4000, 4500, 5600, 6500, 7500]
+        let presets: [(String, Int)] = [
+            ("TUNG", 3200), ("FLUORO", 4000), ("FLASH", 5500),
+            ("DAYLT", 5600), ("CLOUDY", 6500), ("SHADE", 7500),
+        ]
         return chipStripContainer {
-            ForEach(values, id: \.self) { v in
-                chipButton(label: "\(v)K", isActive: vm.wbKelvin == v) {
-                    vm.wbKelvin = v
-                    Task { await vm.setWB(v) }
+            ForEach(presets, id: \.1) { name, kelvin in
+                chipButton(label: name, isActive: vm.wbKelvin == kelvin) {
+                    vm.wbKelvin = kelvin
+                    Task { await vm.setWB(kelvin) }
                     withAnimation(.easeInOut(duration: 0.15)) { activeStrip = nil }
                 }
             }
@@ -409,13 +415,10 @@ struct CameraTabView: View {
     }
 
     private var shutterChipStrip: some View {
-        let angles: [Double] = [45, 90, 135, 172.8, 180, 270, 360]
+        let angles: [Double] = [45, 90, 135, 180, 270, 360]
         return chipStripContainer {
             ForEach(angles, id: \.self) { a in
-                let label = a.truncatingRemainder(dividingBy: 1) == 0
-                    ? "\(Int(a))°"
-                    : String(format: "%.1f°", a)
-                chipButton(label: label, isActive: vm.shutterAngle == a) {
+                chipButton(label: "\(Int(a))°", isActive: vm.shutterAngle == a) {
                     vm.shutterAngle = a
                     Task { await vm.setShutterAngle(a) }
                     withAnimation(.easeInOut(duration: 0.15)) { activeStrip = nil }
@@ -425,13 +428,10 @@ struct CameraTabView: View {
     }
 
     private func chipStripContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                content()
-            }
-            .padding(.horizontal, 12)
-            .frame(minWidth: 0)
+        HStack(spacing: 6) {
+            content()
         }
+        .padding(.horizontal, 8)
         .frame(height: 40)
         .frame(maxWidth: .infinity)
         .background(Theme.surface.opacity(0.98))
@@ -444,14 +444,14 @@ struct CameraTabView: View {
                 .fontWeight(isActive ? .semibold : .regular)
                 .tracking(Theme.labelTracking)
                 .foregroundStyle(isActive ? Theme.background : Theme.text2)
-                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
                 .background(isActive ? settings.activeColor : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
                         .stroke(isActive ? Color.clear : Theme.rule, lineWidth: Theme.ruleWidth)
                 )
-                .cornerRadius(4)
         }
         .buttonStyle(.plain)
     }
