@@ -66,7 +66,7 @@ struct RecoveryFlowView: View {
                 Text(title)
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .tracking(2.0)
-                    .foregroundStyle(Theme.accentColor)
+                    .foregroundStyle(Theme.text2)
                 Spacer()
             }
             .padding(.top, 12)
@@ -112,7 +112,7 @@ struct RecoveryFlowView: View {
                 .frame(width: 8, height: 8)
         case .running:
             Circle()
-                .fill(Theme.accentColor)
+                .fill(Theme.ok)
                 .frame(width: 8, height: 8)
         case .success:
             Image(systemName: "checkmark")
@@ -130,7 +130,7 @@ struct RecoveryFlowView: View {
     private func labelColor(_ state: StepState) -> Color {
         switch state {
         case .pending:          return Theme.tertiary
-        case .running:          return Theme.accentColor
+        case .running:          return Theme.ok
         case .success, .failed: return Theme.secondary
         }
     }
@@ -185,7 +185,7 @@ struct PiDetailView: View {
         VStack(spacing: 0) {
             diagRow("STATUS",
                     value:      vm.healthPiReachable ? "Reachable" : "Unreachable",
-                    valueColor: vm.healthPiReachable ? Theme.accentColor : Theme.dotRed)
+                    valueColor: vm.healthPiReachable ? Theme.ok : Theme.dotRed)
             HRule()
             diagRow("LAST POLL",
                     value:      vm.healthLastPollAt.map { Self.fmt.string(from: $0) } ?? "—",
@@ -223,7 +223,7 @@ struct BmpccDetailView: View {
             } else {
                 diagRow("STATUS",
                         value:      vm.camReachable ? "Reachable" : "Unreachable",
-                        valueColor: vm.camReachable ? Theme.accentColor : Theme.dotRed)
+                        valueColor: vm.camReachable ? Theme.ok : Theme.dotRed)
                 HRule()
                 diagRow("RECORDING",
                         value:      vm.camRecording ? "Recording" : "Idle",
@@ -300,7 +300,7 @@ struct CamDetailView: View {
             HRule()
             diagRow("STREAM",
                     value:      vm.healthPiReachable ? "Active" : "Unavailable",
-                    valueColor: vm.healthPiReachable ? Theme.accentColor : Theme.dotRed)
+                    valueColor: vm.healthPiReachable ? Theme.ok : Theme.dotRed)
             HRule()
             Text("MJPEG STREAM ON :5001/STREAM")
                 .font(.system(size: 9, weight: .regular, design: .monospaced))
@@ -327,7 +327,7 @@ struct YoloDetailView: View {
             } else {
                 diagRow("STATUS",
                         value:      vm.healthYoloRunning ? "Running" : "Not running",
-                        valueColor: vm.healthYoloRunning ? Theme.accentColor : Theme.dotRed)
+                        valueColor: vm.healthYoloRunning ? Theme.ok : Theme.dotRed)
                 HRule()
                 diagRow("LAST INFER",
                         value:      vm.healthDetectLastAgoSec.map { String(format: "%.0fs ago", $0) } ?? "—",
@@ -373,7 +373,7 @@ struct PiSdDetailView: View {
         VStack(spacing: 0) {
             diagRow("STATUS",
                     value:      vm.healthSsdMounted ? "Mounted" : "Not mounted",
-                    valueColor: vm.healthSsdMounted ? Theme.accentColor : Theme.dotRed)
+                    valueColor: vm.healthSsdMounted ? Theme.ok : Theme.dotRed)
             HRule()
             diagRow("FREE",
                     value:      vm.healthSsdMounted ? String(format: "%.1f%%", vm.healthSsdFreePct) : "—",
@@ -396,7 +396,7 @@ struct PiSdDetailView: View {
         guard vm.healthSsdMounted else { return Theme.tertiary }
         if vm.healthSsdFreePct < 5  { return Theme.dotRed }
         if vm.healthSsdFreePct < 10 { return Theme.dotAmber }
-        return Theme.accentColor
+        return Theme.ok
     }
 }
 
@@ -410,7 +410,7 @@ struct CamSdDetailView: View {
             let isActive = vm.camActiveMediaSlot.lowercased().contains("sd")
             diagRow("ACTIVE",
                     value:      isActive ? "Yes" : "No",
-                    valueColor: isActive ? Theme.accentColor : Theme.secondary)
+                    valueColor: isActive ? Theme.text1 : Theme.secondary)
             HRule()
             diagRow("SLOT",   value: "SD Card (Slot 2)", valueColor: Theme.secondary)
             HRule()
@@ -435,7 +435,7 @@ struct CamCfDetailView: View {
                            vm.camActiveMediaSlot.lowercased().contains("cf")
             diagRow("ACTIVE",
                     value:      isActive ? "Yes" : "No",
-                    valueColor: isActive ? Theme.accentColor : Theme.secondary)
+                    valueColor: isActive ? Theme.text1 : Theme.secondary)
             HRule()
             diagRow("REMAINING",
                     value:      vm.camRemainingRecordTime.map { "\($0 / 60)m \($0 % 60)s" } ?? "—",
@@ -462,7 +462,7 @@ struct HdmiDetailView: View {
         VStack(spacing: 0) {
             diagRow("STATUS",
                     value:      vm.hdmiReachable ? "Streaming" : "Offline",
-                    valueColor: vm.hdmiReachable ? Theme.accentColor : Theme.dotRed)
+                    valueColor: vm.hdmiReachable ? Theme.ok : Theme.dotRed)
             HRule()
             diagRow("DEVICE", value: "/dev/video2", valueColor: Theme.secondary)
             HRule()
@@ -504,7 +504,7 @@ private func diagRecoveryButton(_ label: String, action: @escaping () -> Void) -
     } label: {
         Text("\(label) →")
             .font(.system(size: 10, weight: .medium, design: .monospaced))
-            .foregroundStyle(Theme.accentColor)
+            .foregroundStyle(Theme.text1)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
     }

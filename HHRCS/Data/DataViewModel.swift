@@ -193,11 +193,13 @@ final class DataViewModel: ObservableObject {
     @Published var camGain:                 Int?    = nil
     @Published var camActiveMediaSlot:      String  = "—"
     @Published var camRemainingRecordTime:  Int?    = nil
-    @Published var camShutterAngle:         Double? = nil
-    @Published var camLens:                 String? = nil
-    @Published var camBattery:              Int?    = nil
-    @Published var camCodecVariant:         String? = nil
-    @Published var camFormatDetails:        String? = nil
+    @Published var camShutterAngle:              Double? = nil
+    @Published var camLens:                      String? = nil
+    @Published var camCodecVariant:              String? = nil
+    @Published var camFormatDetails:             String? = nil
+    @Published var camMediaVolume:               String? = nil
+    @Published var camMediaClipCount:            Int?    = nil
+    @Published var camMediaSpaceRemainingGb:     Double? = nil
 
     // MARK: – External drives (from Pi /status)
     @Published var externalDrives: [ExternalDrive] = []
@@ -380,12 +382,14 @@ final class DataViewModel: ObservableObject {
         let camGain:                 Int?
         let camActiveMediaSlot:      String?
         let camRemainingRecordTime:  Int?
-        let camShutterAngle:         Double?
-        let camLens:                 String?
-        let camBattery:              Int?
-        let camCodecVariant:         String?
-        let camFormatDetails:        String?
-        let externalDrives:          [ExternalDrive]?
+        let camShutterAngle:             Double?
+        let camLens:                     String?
+        let camCodecVariant:             String?
+        let camFormatDetails:            String?
+        let camMediaVolume:              String?
+        let camMediaClipCount:           Int?
+        let camMediaSpaceRemainingGb:    Double?
+        let externalDrives:              [ExternalDrive]?
 
         enum CodingKeys: String, CodingKey {
             case yoloRunning                 = "yolo_running"
@@ -421,9 +425,11 @@ final class DataViewModel: ObservableObject {
             case camRemainingRecordTime      = "cam_remaining_record_time"
             case camShutterAngle             = "cam_shutter_angle"
             case camLens                     = "cam_lens"
-            case camBattery                  = "cam_battery"
             case camCodecVariant             = "cam_codec_variant"
             case camFormatDetails            = "cam_format_details"
+            case camMediaVolume              = "cam_media_volume"
+            case camMediaClipCount           = "cam_media_clip_count"
+            case camMediaSpaceRemainingGb    = "cam_media_space_remaining_gb"
             case externalDrives              = "external_drives"
         }
     }
@@ -531,11 +537,13 @@ final class DataViewModel: ObservableObject {
             camGain                = poll.camGain
             camActiveMediaSlot     = poll.camActiveMediaSlot  ?? "—"
             camRemainingRecordTime = poll.camRemainingRecordTime
-            camShutterAngle        = poll.camShutterAngle
-            camLens                = poll.camLens
-            camBattery             = poll.camBattery
-            camCodecVariant        = poll.camCodecVariant
-            camFormatDetails       = poll.camFormatDetails
+            camShutterAngle              = poll.camShutterAngle
+            camLens                      = poll.camLens
+            camCodecVariant              = poll.camCodecVariant
+            camFormatDetails             = poll.camFormatDetails
+            camMediaVolume               = poll.camMediaVolume
+            camMediaClipCount            = poll.camMediaClipCount
+            camMediaSpaceRemainingGb     = poll.camMediaSpaceRemainingGb
             if let drives = poll.externalDrives { externalDrives = drives }
 
             // SSD storage_monitor
@@ -767,7 +775,7 @@ final class DataViewModel: ObservableObject {
 
     var triggerStateColor: Color {
         switch triggerState {
-        case .active:    return Theme.accent
+        case .active:    return Theme.ok
         case .holding:   return .white
         case .countdown: return Color(red: 0.541, green: 0.541, blue: 0.522) // #8A8A85
         }

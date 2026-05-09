@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DetectionOverlayView: View {
     @EnvironmentObject var vm: DataViewModel
+    @ObservedObject private var settings = AppSettings.shared
     let poller: StillPoller
     var verifyDetection: DetectionHistoryItem? = nil
     var verifyFiveMinCount: Int = 0
@@ -27,7 +28,7 @@ struct DetectionOverlayView: View {
                         height: det.box.height * imgRect.height
                     )
                     Rectangle()
-                        .stroke(Theme.accent, lineWidth: 1.5)
+                        .stroke(settings.activeColor, lineWidth: 1.5)
                         .frame(width: r.width, height: r.height)
                         .position(x: r.midX, y: r.midY)
 
@@ -36,7 +37,7 @@ struct DetectionOverlayView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(Theme.accent)
+                        .background(settings.activeColor)
                         .position(x: r.midX, y: r.minY - 8)
                 }
 
@@ -89,7 +90,7 @@ struct DetectionOverlayView: View {
 
     private func verifyBoxColor(for cls: String) -> Color {
         switch cls {
-        case "animal":  return Theme.accentColor
+        case "animal":  return settings.activeColor
         case "person":  return Theme.recordingRed
         default:        return Theme.secondary
         }

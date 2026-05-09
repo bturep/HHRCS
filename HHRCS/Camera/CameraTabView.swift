@@ -143,9 +143,9 @@ struct CameraTabView: View {
         HStack(spacing: 0) {
             if vm.yoloLocked && vm.isRecording {
                 Text("AUTO")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .font(Theme.label(size: 9))
                     .tracking(1.2)
-                    .foregroundStyle(Theme.accent)
+                    .foregroundStyle(settings.activeColor)
                     .padding(.trailing, 10)
             }
 
@@ -169,7 +169,7 @@ struct CameraTabView: View {
                         .foregroundStyle(.white)
                 }
             }
-            .font(.system(size: 11, weight: .regular, design: .monospaced))
+            .font(Theme.body(size: 11))
 
             Spacer()
 
@@ -193,7 +193,7 @@ struct CameraTabView: View {
                         .foregroundStyle(.white)
                 }
             }
-            .font(.system(size: 11, weight: .regular, design: .monospaced))
+            .font(Theme.body(size: 11))
 
             Spacer()
 
@@ -217,7 +217,7 @@ struct CameraTabView: View {
                         .foregroundStyle(.white)
                 }
             }
-            .font(.system(size: 11, weight: .regular, design: .monospaced))
+            .font(Theme.body(size: 11))
 
             Spacer()
 
@@ -264,13 +264,7 @@ struct CameraTabView: View {
                         Text(page.label)
                             .font(.system(size: 8, weight: .semibold, design: .monospaced))
                             .tracking(1.8)
-                            .foregroundStyle(Theme.accentColor)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 2)
-                                    .stroke(Theme.accentColor, lineWidth: 0.5)
-                            )
+                            .foregroundStyle(settings.activeColor)
                     } else {
                         Circle()
                             .fill(Theme.rule)
@@ -318,9 +312,9 @@ private struct StillImagePage: View {
                 VStack {
                     Spacer()
                     Text("FINALIZING CLIP")
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .font(Theme.label(size: 9))
                         .tracking(1.5)
-                        .foregroundStyle(Theme.accentColor.opacity(0.8))
+                        .foregroundStyle(Theme.text2)
                         .padding(.bottom, 8)
                 }
             }
@@ -411,7 +405,7 @@ private struct OperatorControlRow<Indicator: View>: View {
                             } label: {
                                 Image(systemName: "camera.aperture")
                                     .font(.system(size: 24))
-                                    .foregroundStyle(captureFlash ? Color(hex: "FF3B30") : Color.white.opacity(0.5))
+                                    .foregroundStyle(captureFlash ? Theme.recordingRed : Color.white.opacity(0.5))
                             }
                             .buttonStyle(.plain)
                         }
@@ -444,11 +438,11 @@ private struct OperatorControlRow<Indicator: View>: View {
             HStack(spacing: 5) {
                 Image(systemName: "record.circle")
                     .font(.system(size: 22))
-                    .foregroundStyle(Theme.accentColor)
+                    .foregroundStyle(Theme.text2)
                 Text("FINALIZING")
-                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .font(Theme.label(size: 8))
                     .tracking(1.0)
-                    .foregroundStyle(Theme.accentColor)
+                    .foregroundStyle(Theme.text2)
             }
             .opacity(breatheOpacity)
             .allowsHitTesting(false)
@@ -474,6 +468,7 @@ private struct OperatorControlRow<Indicator: View>: View {
 
 private struct ISOPopover: View {
     @EnvironmentObject var vm: DataViewModel
+    @ObservedObject private var settings = AppSettings.shared
     private let isoStops = [100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600]
 
     var body: some View {
@@ -485,7 +480,7 @@ private struct ISOPopover: View {
                     .foregroundStyle(Theme.tertiary)
                 Spacer()
                 Text("\(vm.iso)")
-                    .font(.system(size: 13, weight: .regular, design: .monospaced))
+                    .font(Theme.body(size: 13))
                     .foregroundStyle(.white)
             }
             Slider(
@@ -498,7 +493,7 @@ private struct ISOPopover: View {
             ) { editing in
                 if !editing { Task { await vm.setISO(vm.iso) } }
             }
-            .tint(Theme.accent)
+            .tint(Theme.text1)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -511,6 +506,7 @@ private struct ISOPopover: View {
 
 private struct WBPopover: View {
     @EnvironmentObject var vm: DataViewModel
+    @ObservedObject private var settings = AppSettings.shared
     private let presets: [(String, Int)] = [
         ("TUNG", 3200), ("FLUO", 4000), ("SUN", 5600), ("CLOUD", 6500), ("SHADE", 7500)
     ]
@@ -524,7 +520,7 @@ private struct WBPopover: View {
                     .foregroundStyle(Theme.tertiary)
                 Spacer()
                 Text("\(vm.wbKelvin) K")
-                    .font(.system(size: 13, weight: .regular, design: .monospaced))
+                    .font(Theme.body(size: 13))
                     .foregroundStyle(.white)
             }
             Slider(
@@ -537,7 +533,7 @@ private struct WBPopover: View {
             ) { editing in
                 if !editing { Task { await vm.setWB(vm.wbKelvin) } }
             }
-            .tint(Theme.accent)
+            .tint(Theme.text1)
 
             HStack(spacing: 0) {
                 ForEach(presets, id: \.0) { name, kelvin in
@@ -545,15 +541,15 @@ private struct WBPopover: View {
                         vm.wbKelvin = kelvin
                         Task { await vm.setWB(kelvin) }
                     }
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .font(Theme.label(size: 9))
                     .tracking(1.0)
-                    .foregroundStyle(vm.wbKelvin == kelvin ? Theme.accent : Theme.secondary)
+                    .foregroundStyle(vm.wbKelvin == kelvin ? settings.activeColor : Theme.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
                     .overlay(
                         RoundedRectangle(cornerRadius: 2)
                             .stroke(
-                                vm.wbKelvin == kelvin ? Theme.accent.opacity(0.5) : Theme.rule,
+                                vm.wbKelvin == kelvin ? settings.activeColor.opacity(0.5) : Theme.rule,
                                 lineWidth: Theme.ruleWidth
                             )
                     )
@@ -572,6 +568,7 @@ private struct WBPopover: View {
 
 private struct ShutterPopover: View {
     @EnvironmentObject var vm: DataViewModel
+    @ObservedObject private var settings = AppSettings.shared
     private let options: [Double] = [90, 120, 172.8, 180]
 
     var body: some View {
@@ -587,14 +584,14 @@ private struct ShutterPopover: View {
                         vm.shutterAngle = angle
                         Task { await vm.setShutterAngle(angle) }
                     }
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .foregroundStyle(vm.shutterAngle == angle ? Theme.accent : Theme.secondary)
+                    .font(Theme.body(size: 11))
+                    .foregroundStyle(vm.shutterAngle == angle ? settings.activeColor : Theme.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                     .overlay(
                         RoundedRectangle(cornerRadius: 2)
                             .stroke(
-                                vm.shutterAngle == angle ? Theme.accent.opacity(0.5) : Theme.rule,
+                                vm.shutterAngle == angle ? settings.activeColor.opacity(0.5) : Theme.rule,
                                 lineWidth: Theme.ruleWidth
                             )
                     )

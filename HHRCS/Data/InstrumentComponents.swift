@@ -73,15 +73,16 @@ struct MetricCell: View {
 
 // MARK: – Inline bar + percentage
 struct BarCell: View {
-    let label:   String
-    let percent: Double        // 0–100
-    var warnAt:  Double = 85
-    var critAt:  Double = 95
+    let label:     String
+    let percent:   Double        // 0–100
+    var valueSize: CGFloat = 17
+    var warnAt:    Double = 85
+    var critAt:    Double = 95
 
     private var barColor: Color {
-        if percent >= critAt { return Color.red }
-        if percent >= warnAt { return Theme.accent }
-        return Theme.secondary
+        if percent >= critAt { return Theme.danger }
+        if percent >= warnAt { return Theme.text2.opacity(0.8) }
+        return Theme.text2
     }
 
     var subtitle: String? = nil
@@ -89,7 +90,7 @@ struct BarCell: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(String(format: "%.1f", percent) + "%")
-                .font(Theme.dataValue(size: 13))
+                .font(Theme.dataValue(size: valueSize))
                 .foregroundStyle(.white)
             Text(label)
                 .font(Theme.dataLabel(size: 9))
@@ -108,7 +109,7 @@ struct BarCell: View {
             .frame(height: 2)
             if let sub = subtitle {
                 Text(sub)
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .font(Theme.body(size: 11))
                     .foregroundStyle(Theme.tertiary)
             }
         }

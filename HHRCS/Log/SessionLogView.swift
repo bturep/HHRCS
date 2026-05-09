@@ -312,6 +312,7 @@ private struct LogRow: View {
 
 private struct DetectionLogRow: View {
     let entry: DetectionHistoryItem
+    @ObservedObject private var settings = AppSettings.shared
 
     private static let timeFmt: DateFormatter = {
         let f = DateFormatter()
@@ -337,7 +338,7 @@ private struct DetectionLogRow: View {
 
     private var classColor: Color {
         switch entry.detectionClass {
-        case "animal":  return Theme.accentColor
+        case "animal":  return settings.activeColor
         case "person":  return Theme.recordingRed
         default:        return Theme.secondary
         }

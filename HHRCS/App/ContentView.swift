@@ -99,6 +99,7 @@ private struct AppTabBar: View {
     @Binding var selectedTab: Int
     @EnvironmentObject var orientationObserver: DeviceOrientationObserver
     @EnvironmentObject var dataVM: DataViewModel
+    @ObservedObject private var settings = AppSettings.shared
 
     private var isLandscape: Bool { orientationObserver.orientation.isLandscape }
 
@@ -159,6 +160,6 @@ private struct AppTabBar: View {
         if tab.tag == 0 && (dataVM.isRecording || dataVM.isPiCamRecording) {
             return Theme.recordingRed
         }
-        return selectedTab == tab.tag ? Theme.accentColor : Color(white: 0.38)
+        return selectedTab == tab.tag ? settings.activeColor : Theme.text3
     }
 }

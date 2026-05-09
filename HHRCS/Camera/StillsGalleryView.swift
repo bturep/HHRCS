@@ -74,13 +74,13 @@ private struct StillCell: View {
                     }
 
                 Text(still.sourceLabel)
-                    .font(.system(size: 9, weight: .regular, design: .monospaced))
+                    .font(Theme.label(size: 9))
                     .foregroundStyle(Theme.tertiary)
                     .frame(maxWidth: .infinity, alignment: .center)
             }
 
             Text(timeFormatter.string(from: still.timestamp))
-                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                .font(Theme.label(size: 10))
                 .foregroundStyle(Theme.tertiary)
                 .lineLimit(1)
         }

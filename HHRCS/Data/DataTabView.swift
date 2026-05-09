@@ -58,7 +58,7 @@ struct DataTabView: View {
                     let recColor: Color = {
                         switch vm.recordingState {
                         case .recording:  return Theme.dotRed
-                        case .finalizing: return Theme.accentColor
+                        case .finalizing: return Theme.text2
                         case .idle:       return .white
                         }
                     }()
@@ -85,15 +85,12 @@ struct DataTabView: View {
                     )
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     MetricCell(
-                        value: vm.camBattery.map { "\($0)%" } ?? "—",
-                        label: "BATTERY"
-                    )
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    MetricCell(
                         value: vm.camLens ?? "—",
                         label: "LENS"
                     )
                     .frame(maxWidth: .infinity, alignment: .topLeading)
+                    Spacer()
+                        .frame(maxWidth: .infinity)
                 }
                 .frame(maxWidth: .infinity)
 
@@ -104,6 +101,19 @@ struct DataTabView: View {
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                     Spacer()
                         .frame(maxWidth: .infinity)
+                }
+                .frame(maxWidth: .infinity)
+
+                HStack(alignment: .top, spacing: 0) {
+                    MetricCell(value: vm.camMediaVolume ?? "—", label: "MEDIA VOL")
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(value: vm.camMediaClipCount.map { "\($0)" } ?? "—", label: "CLIP COUNT")
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    MetricCell(
+                        value: vm.camMediaSpaceRemainingGb.map { String(format: "%.1f GB", $0) } ?? "—",
+                        label: "SPACE REM"
+                    )
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -119,12 +129,14 @@ struct DataTabView: View {
                     MetricCell(
                         value: vm.enclosureTempC.map { String(format: "%.1f°C", $0) } ?? "--",
                         label: "TEMPERATURE",
+                        valueSize: 17,
                         valueColor: vm.enclosureTempC == nil ? Theme.tertiary : .white
                     )
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     MetricCell(
                         value: vm.enclosureHumidity.map { String(format: "%.0f%%", $0) } ?? "--",
                         label: "HUMIDITY",
+                        valueSize: 17,
                         valueColor: vm.enclosureHumidity == nil ? Theme.tertiary : .white
                     )
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -145,7 +157,7 @@ struct DataTabView: View {
                         valueColor: vm.pressure == nil ? Theme.tertiary : .white
                     )
                     .frame(maxWidth: .infinity, alignment: .topLeading)
-                    MetricCell(value: String(format: "%.1f°C", vm.cpuTemp), label: "CPU TEMP")
+                    MetricCell(value: String(format: "%.1f°C", vm.cpuTemp), label: "CPU TEMP", valueSize: 17)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                     Spacer()
                         .frame(maxWidth: .infinity)
@@ -165,7 +177,7 @@ struct DataTabView: View {
 
             if let w = vm.weather {
                 HStack(alignment: .top, spacing: 0) {
-                    MetricCell(value: String(format: "%.1f°C", w.current.temperatureC), label: "TEMPERATURE")
+                    MetricCell(value: String(format: "%.1f°C", w.current.temperatureC), label: "TEMPERATURE", valueSize: 17)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
 
                     // Icon column — centered vertically
@@ -178,7 +190,7 @@ struct DataTabView: View {
                     }
                     .frame(maxWidth: .infinity)
 
-                    MetricCell(value: String(format: "%.0f km/h", w.current.windspeedKmh), label: "WIND")
+                    MetricCell(value: String(format: "%.0f km/h", w.current.windspeedKmh), label: "WIND", valueSize: 17)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .frame(maxWidth: .infinity)
@@ -276,13 +288,13 @@ private struct HourCell: View {
     var body: some View {
         VStack(spacing: 5) {
             Text(hour.time)
-                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .font(Theme.label(size: 9))
                 .foregroundStyle(Theme.tertiary)
             Image(systemName: WeatherService.sfSymbol(for: hour.weatherCode))
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.secondary)
             Text(String(format: "%.0f°", hour.temperatureC))
-                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .font(Theme.label(size: 11))
                 .foregroundStyle(.white)
         }
         .frame(minWidth: 48)

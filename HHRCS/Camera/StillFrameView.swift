@@ -51,7 +51,7 @@ struct StillFrameView: View {
         VStack(spacing: 12) {
             Spacer()
             ProgressView()
-                .tint(Theme.accent)
+                .tint(Theme.text1)
                 .scaleEffect(1.1)
             Text("CAPTURING")
                 .font(Theme.dataLabel(size: 9))

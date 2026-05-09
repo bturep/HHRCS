@@ -106,27 +106,31 @@ class BMPCCCameraClient:
     # ── Shutter / battery / lens ──────────────────────────────────────────────
 
     def get_shutter_angle(self) -> Optional[float]:
-        data = self._get("/video/shutterAngle")
+        data = self._get("/video/shutter")
         if data is None:
             return None
         raw = data.get("shutterAngle")
         return round(raw / 100.0, 1) if raw is not None else None
-
-    def get_battery(self) -> Optional[int]:
-        data = self._get("/system/batteryLevel")
-        return data.get("batteryLevel") if data else None
 
     def get_lens_info(self) -> Optional[str]:
         data = self._get("/lens/iris")
         if data is None:
             return None
         stop = data.get("apertureStop")
-        return f"f/{stop:.1f}" if stop is not None else None
+        if stop is None or stop == 0:
+            return None
+        return f"f/{stop:.1f}"
 
     # ── Media ─────────────────────────────────────────────────────────────────
 
     def get_active_media(self) -> Optional[dict]:
-        return self._get("/media/active")
+        data = self._get("/media/workingset")
+        if data is None:
+            return None
+        for entry in data.get("workingset", []):
+            if entry.get("activeDisk"):
+                return entry
+        return None
 
     # ── Full state (used by /status endpoint) ─────────────────────────────────
 
@@ -140,13 +144,15 @@ class BMPCCCameraClient:
             "cam_iso":                   None,
             "cam_white_balance":         None,
             "cam_gain":                  None,
-            "cam_active_media_slot":     None,
-            "cam_remaining_record_time": None,
-            "cam_shutter_angle":         None,
-            "cam_battery":               None,
-            "cam_lens":                  None,
-            "cam_codec_variant":         None,
-            "cam_format_details":        None,
+            "cam_active_media_slot":         None,
+            "cam_remaining_record_time":     None,
+            "cam_shutter_angle":             None,
+            "cam_lens":                      None,
+            "cam_codec_variant":             None,
+            "cam_format_details":            None,
+            "cam_media_volume":              None,
+            "cam_media_clip_count":          None,
+            "cam_media_space_remaining_gb":  None,
         }
 
         if not self.is_reachable():
@@ -165,7 +171,7 @@ class BMPCCCameraClient:
             fmt = self.get_format()
             if fmt:
                 codec_full = fmt.get("codec") or ""
-                parts = codec_full.split(" ", 1)
+                parts = codec_full.split(":", 1)
                 result["cam_codec"]         = parts[0] if parts else codec_full
                 result["cam_codec_variant"] = parts[1] if len(parts) > 1 else None
                 result["cam_frame_rate"]    = fmt.get("frameRate")
@@ -201,6 +207,15 @@ class BMPCCCameraClient:
                 remaining = media.get("remainingRecordTime")
                 if remaining is not None:
                     result["cam_remaining_record_time"] = int(remaining)
+                remaining_space = media.get("remainingSpace")
+                if remaining_space is not None:
+                    result["cam_media_space_remaining_gb"] = round(remaining_space / 1e9, 1)
+                clip_count = media.get("clipCount")
+                if clip_count is not None:
+                    result["cam_media_clip_count"] = int(clip_count)
+                volume = media.get("volume")
+                if volume is not None:
+                    result["cam_media_volume"] = str(volume)
         except Exception as e:
             log.warning(f"[cam] media fetch: {e}")
 
@@ -208,11 +223,6 @@ class BMPCCCameraClient:
             result["cam_shutter_angle"] = self.get_shutter_angle()
         except Exception as e:
             log.warning(f"[cam] shutter angle fetch: {e}")
-
-        try:
-            result["cam_battery"] = self.get_battery()
-        except Exception as e:
-            log.warning(f"[cam] battery fetch: {e}")
 
         try:
             result["cam_lens"] = self.get_lens_info()

@@ -67,9 +67,9 @@ struct ControlTabView: View {
 
                 Button(action: { settings.lockOwnerMode() }) {
                     Text("LOCK OWNER MODE")
-                        .font(.system(size: 13, weight: .regular))
+                        .font(Theme.label(size: 11))
                         .tracking(Theme.headerTracking)
-                        .foregroundStyle(Color.white.opacity(0.6))
+                        .foregroundStyle(Theme.text2)
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .overlay(
                             RoundedRectangle(cornerRadius: 4)
@@ -95,7 +95,7 @@ struct ControlTabView: View {
                     .foregroundStyle(Theme.secondary)
                 Spacer()
                 Text("\(vm.iso)")
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .font(Theme.body(size: 11))
                     .foregroundStyle(.white)
             }
             Slider(
@@ -108,7 +108,7 @@ struct ControlTabView: View {
             ) { editing in
                 if !editing { Task { await vm.setISO(vm.iso) } }
             }
-            .tint(Theme.accent)
+            .tint(Theme.text1)
         }
     }
 
@@ -123,7 +123,7 @@ struct ControlTabView: View {
                     .foregroundStyle(Theme.secondary)
                 Spacer()
                 Text("\(vm.wbKelvin) K")
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .font(Theme.body(size: 11))
                     .foregroundStyle(.white)
             }
             Slider(
@@ -136,7 +136,7 @@ struct ControlTabView: View {
             ) { editing in
                 if !editing { Task { await vm.setWB(vm.wbKelvin) } }
             }
-            .tint(Theme.accent)
+            .tint(Theme.text1)
 
             HStack(spacing: 6) {
                 ForEach(wbPresets, id: \.0) { name, kelvin in
@@ -144,15 +144,15 @@ struct ControlTabView: View {
                         vm.wbKelvin = kelvin
                         Task { await vm.setWB(kelvin) }
                     }
-                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .font(Theme.label(size: 8))
                     .tracking(1.0)
-                    .foregroundStyle(vm.wbKelvin == kelvin ? Theme.accent : Theme.secondary)
+                    .foregroundStyle(vm.wbKelvin == kelvin ? settings.activeColor : Theme.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 4)
                     .overlay(
                         RoundedRectangle(cornerRadius: 2)
                             .stroke(
-                                vm.wbKelvin == kelvin ? Theme.accent.opacity(0.5) : Theme.rule,
+                                vm.wbKelvin == kelvin ? settings.activeColor.opacity(0.5) : Theme.rule,
                                 lineWidth: Theme.ruleWidth
                             )
                     )

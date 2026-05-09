@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import SwiftUI
 
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
@@ -87,6 +88,11 @@ final class AppSettings: ObservableObject {
     @Published var notifyAgentActivity: Bool {
         didSet { UserDefaults.standard.set(notifyAgentActivity, forKey: Keys.notifyAgentActivity) }
     }
+
+    // MARK: – WARM UI
+    @AppStorage("ui.warmAccent") var warmUI: Bool = false
+
+    var activeColor: Color { warmUI ? Theme.warmAccent : Theme.text1 }
 
     // MARK: – Owner Mode
     @Published var ownerModeEnabled: Bool {

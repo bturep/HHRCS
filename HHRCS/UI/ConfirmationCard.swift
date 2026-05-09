@@ -9,6 +9,8 @@ struct ConfirmationCard: View {
     let onConfirm:    () -> Void
     let onCancel:     () -> Void
 
+    @ObservedObject private var settings = AppSettings.shared
+
     var body: some View {
         ZStack {
             Color.black.opacity(0.30)
@@ -18,30 +20,30 @@ struct ConfirmationCard: View {
             VStack(spacing: 20) {
                 VStack(spacing: 8) {
                     Text(title)
-                        .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.white)
+                        .font(Theme.label(size: 11))
+                        .foregroundStyle(Theme.text1)
                         .tracking(Theme.labelTracking)
                     if let msg = message {
                         Text(msg)
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
-                            .foregroundStyle(Theme.tertiary)
+                            .font(Theme.body(size: 11))
+                            .foregroundStyle(Theme.text3)
                     }
                 }
                 HStack(spacing: 0) {
                     Button { onCancel() } label: {
                         Text(cancelLabel)
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .font(Theme.label(size: 11))
                             .tracking(Theme.labelTracking)
-                            .foregroundStyle(Theme.secondary)
+                            .foregroundStyle(Theme.text2)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                     }
                     .buttonStyle(.plain)
                     Button { onConfirm() } label: {
                         Text(confirmLabel)
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .font(Theme.label(size: 11))
                             .tracking(Theme.labelTracking)
-                            .foregroundStyle(destructive ? Theme.recordingRed : Theme.accentColor)
+                            .foregroundStyle(destructive ? Theme.danger : settings.activeColor)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                     }
@@ -49,7 +51,7 @@ struct ConfirmationCard: View {
                 }
             }
             .padding(24)
-            .background(Theme.cardBackground)
+            .background(Theme.surface)
             .cornerRadius(Theme.cardRadius)
             .padding(.horizontal, 32)
         }
