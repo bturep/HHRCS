@@ -952,6 +952,7 @@ private struct NewDeploymentSheet: View {
     @Binding var isPresented: Bool
     let onCreated: () -> Void
 
+    @ObservedObject private var settings = AppSettings.shared
     @State private var name     = ""
     @State private var position = ""
     @State private var lat      = ""
