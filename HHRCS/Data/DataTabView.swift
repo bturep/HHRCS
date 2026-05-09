@@ -5,31 +5,43 @@ struct DataTabView: View {
 
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                cameraSection
-                enclosureSection
-                weatherSection
-                astroSection
-                storageSection
+        VStack(spacing: 0) {
+            HStack {
+                Text("DATA")
+                    .font(Theme.label(size: 11))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(Theme.text1)
+                    .fontWeight(.semibold)
+                Spacer()
             }
-            .padding(Theme.pagePadding)
-            .padding(.bottom, 20)
+            .padding(.horizontal, Theme.pagePadding)
+            .frame(height: 32)
+            HRule().padding(.horizontal, Theme.pagePadding)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    cameraSection
+                    enclosureSection
+                    weatherSection
+                    astroSection
+                    storageSection
+                }
+                .padding(Theme.pagePadding)
+                .padding(.bottom, 20)
+            }
+            .scrollIndicators(.hidden)
+            .refreshable {
+                await vm.refreshWeather()
+                await vm.refreshAstro()
+            }
         }
-        .scrollIndicators(.hidden)
         .background(Theme.background)
-        .refreshable {
-            await vm.refreshWeather()
-            await vm.refreshAstro()
-        }
     }
 
     // MARK: – Camera (BMPCC via ethernet)
     private var cameraSection: some View {
         let codecDisplay: String = {
-            let base = vm.camCodec
-            if let v = vm.camCodecVariant { return "\(base) · \(v)" }
-            return base
+            if let v = vm.camCodecVariant { return v }
+            return vm.camCodec
         }()
         return SectionCard(title: "CAMERA") {
             VStack(spacing: 12) {
@@ -103,21 +115,21 @@ struct DataTabView: View {
                 // Row 1: TEMPERATURE, HUMIDITY, DEW POINT
                 HStack(alignment: .top, spacing: 0) {
                     MetricCell(
-                        value: vm.enclosureTempC.map { String(format: "%.1f°C", $0) } ?? "--",
+                        value: vm.enclosureTempC.map { String(format: "%.1f°C", $0) } ?? "—",
                         label: "TEMPERATURE",
                         valueSize: 17,
                         valueColor: vm.enclosureTempC == nil ? Theme.tertiary : .white
                     )
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     MetricCell(
-                        value: vm.enclosureHumidity.map { String(format: "%.0f%%", $0) } ?? "--",
+                        value: vm.enclosureHumidity.map { String(format: "%.0f%%", $0) } ?? "—",
                         label: "HUMIDITY",
                         valueSize: 17,
                         valueColor: vm.enclosureHumidity == nil ? Theme.tertiary : .white
                     )
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     MetricCell(
-                        value: vm.dewPoint.map { String(format: "%.1f°C", $0) } ?? "--",
+                        value: vm.dewPoint.map { String(format: "%.1f°C", $0) } ?? "—",
                         label: "DEW POINT",
                         valueColor: vm.dewPoint == nil ? Theme.tertiary : .white
                     )
@@ -128,7 +140,7 @@ struct DataTabView: View {
                 // Row 2: PRESSURE, CPU TEMP
                 HStack(alignment: .top, spacing: 0) {
                     MetricCell(
-                        value: vm.pressure.map { String(format: "%.1f", $0) } ?? "--",
+                        value: vm.pressure.map { String(format: "%.1f", $0) } ?? "—",
                         label: "PRESSURE hPa",
                         valueColor: vm.pressure == nil ? Theme.tertiary : .white
                     )

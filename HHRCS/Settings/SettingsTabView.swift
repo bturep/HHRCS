@@ -50,25 +50,38 @@ struct SettingsTabView: View {
     @AppStorage("stillRefreshInterval") private var stillRefreshInterval: Int = 5
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                diagnosticCard
-                enclosureCard
-                deploymentCard
-                refreshIntervalCard
-                detectorThresholdCard
-                accessCard
-                systemCard
-                agentCard
-                notificationsCard
-                deploymentChecklistCard
-                displayCard
-                versionRow
+        VStack(spacing: 0) {
+            HStack {
+                Text("SETTINGS")
+                    .font(Theme.label(size: 11))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(Theme.text1)
+                    .fontWeight(.semibold)
+                Spacer()
             }
-            .padding(Theme.pagePadding)
-            .padding(.bottom, 40)
+            .padding(.horizontal, Theme.pagePadding)
+            .frame(height: 32)
+            HRule().padding(.horizontal, Theme.pagePadding)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    diagnosticCard
+                    enclosureCard
+                    deploymentCard
+                    refreshIntervalCard
+                    detectorThresholdCard
+                    accessCard
+                    systemCard
+                    agentCard
+                    notificationsCard
+                    deploymentChecklistCard
+                    displayCard
+                    versionRow
+                }
+                .padding(Theme.pagePadding)
+                .padding(.bottom, 40)
+            }
+            .scrollIndicators(.hidden)
         }
-        .scrollIndicators(.hidden)
         .background(Theme.background)
         .clipShape(BottomRoundedRectangle(radius: Theme.cardRadius))
         .onAppear {
@@ -771,7 +784,20 @@ struct SettingsTabView: View {
     private var systemCard: some View {
         SectionCard(title: "SYSTEM") {
             VStack(spacing: 0) {
-                ToggleRow(label: "DAWN / DUSK WINDOWS", isOn: $settings.dawnDuskWindows)
+                HStack(alignment: .center) {
+                    Circle()
+                        .fill(settings.dawnDuskWindows ? settings.activeColor : Theme.tertiary)
+                        .frame(width: 6, height: 6)
+                    Text("DAWN / DUSK WINDOWS")
+                        .font(Theme.dataLabel(size: 9))
+                        .tracking(Theme.labelTracking)
+                        .foregroundStyle(Theme.secondary)
+                    Spacer()
+                    Toggle("", isOn: $settings.dawnDuskWindows)
+                        .labelsHidden()
+                        .toggleStyle(NeutralToggleStyle(activeColor: settings.activeColor))
+                }
+                .padding(.vertical, 8)
             }
         }
     }
@@ -1120,6 +1146,7 @@ private struct ToggleRow: View {
     var subtitle: String? = nil
     @Binding var isOn: Bool
     var onChange: ((Bool) -> Void)? = nil
+    @ObservedObject private var settings = AppSettings.shared
 
     var body: some View {
         HStack(alignment: .center) {
@@ -1137,7 +1164,7 @@ private struct ToggleRow: View {
             Spacer()
             Toggle("", isOn: $isOn)
                 .labelsHidden()
-                .toggleStyle(NeutralToggleStyle())
+                .toggleStyle(NeutralToggleStyle(activeColor: settings.activeColor))
                 .onChange(of: isOn) { _, v in onChange?(v) }
         }
         .padding(.vertical, 8)

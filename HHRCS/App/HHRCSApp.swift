@@ -28,6 +28,7 @@ struct HHRCSApp: App {
 
     init() {
         configureAppearance()
+        applyWarmUIDefault()
         NotificationManager.shared.requestPermission()
         #if canImport(UIKit)
         UIDevice.current.beginGeneratingDeviceOrientationNotifications()
@@ -52,6 +53,14 @@ struct HHRCSApp: App {
             case .inactive, .background: dataVM.suspend()
             @unknown default:            break
             }
+        }
+    }
+
+    private func applyWarmUIDefault() {
+        let ud = UserDefaults.standard
+        if !ud.bool(forKey: "ui.warmAccent.defaultSet") {
+            ud.set(true, forKey: "ui.warmAccent")
+            ud.set(true, forKey: "ui.warmAccent.defaultSet")
         }
     }
 

@@ -93,7 +93,7 @@ final class AppSettings: ObservableObject {
     }
 
     // MARK: – WARM UI
-    @AppStorage("ui.warmAccent") var warmUI: Bool = false
+    @AppStorage("ui.warmAccent") var warmUI: Bool = true
 
     var activeColor: Color { warmUI ? Theme.warmAccent : Theme.text1 }
 

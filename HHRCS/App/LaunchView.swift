@@ -11,7 +11,11 @@ struct LaunchView: View {
 
     var body: some View {
         ZStack {
-            Theme.background.ignoresSafeArea()
+            Image("LaunchBackground")
+                .resizable()
+                .scaledToFill()
+                .ignoresSafeArea()
+                .overlay(Color.black.opacity(0.45))
 
             VStack(alignment: .leading, spacing: -6) {
                 letterRow(letter: "H", word: "UNTER")

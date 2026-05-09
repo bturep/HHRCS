@@ -70,9 +70,10 @@ enum Theme {
 // MARK: – Neutral toggle style
 
 struct NeutralToggleStyle: ToggleStyle {
+    var activeColor: Color = Theme.text1
     func makeBody(configuration: Configuration) -> some View {
         RoundedRectangle(cornerRadius: 12)
-            .fill(configuration.isOn ? Color.white.opacity(0.85) : Color.white.opacity(0.10))
+            .fill(configuration.isOn ? activeColor.opacity(0.85) : Color.white.opacity(0.10))
             .frame(width: 38, height: 22)
             .overlay(alignment: configuration.isOn ? .trailing : .leading) {
                 Circle()
