@@ -50,49 +50,61 @@ struct CameraTabView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack {
             Theme.background.ignoresSafeArea()
 
-            TabView(selection: $currentPage) {
-                StillImagePage(poller: hdmiPoller, recordingState: vm.recordingState)
-                    .padding(.top, 32)
-                    .padding(.bottom, isLandscape ? 0 : 54)
-                    .tag(CameraPage.still)
-
-                StillImagePage(poller: camPoller)
-                    .padding(.top, 32)
-                    .padding(.bottom, isLandscape ? 0 : 54)
-                    .tag(CameraPage.live)
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .ignoresSafeArea(edges: isLandscape ? .all : .top)
-
-            if !isLandscape {
-                switch currentPage {
-                case .still:
-                    OperatorControlRow(
-                        isOwner: settings.ownerModeEnabled,
-                        recordingState: vm.recordingState,
-                        captureIsPlaceholder: false,
-                        onRecord: { Task { await vm.toggleBmpccRecord() } },
-                        onCapture: { Task { await vm.captureHdmiStill() } }
-                    ) { pageIndicator }
-                case .live:
-                    OperatorControlRow(
-                        isOwner: settings.ownerModeEnabled,
-                        recordingState: .idle,
-                        captureIsPlaceholder: false,
-                        showRecord: false,
-                        onRecord: {},
-                        onCapture: { Task { await vm.captureStill() } }
-                    ) { pageIndicator }
+            if isLandscape {
+                TabView(selection: $currentPage) {
+                    StillImagePage(poller: hdmiPoller, recordingState: vm.recordingState)
+                        .tag(CameraPage.still)
+                    StillImagePage(poller: camPoller)
+                        .tag(CameraPage.live)
                 }
-            }
-        }
-        .overlay(alignment: .top) {
-            switch currentPage {
-            case .still: stillDataBar
-            case .live:  EmptyView()
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .ignoresSafeArea()
+            } else {
+                VStack(spacing: 0) {
+                    pageIndicator
+                        .padding(.horizontal, Theme.pagePadding)
+                        .frame(height: 32)
+
+                    HRule()
+
+                    if currentPage == .still {
+                        stillDataRow
+                        HRule()
+                    }
+
+                    TabView(selection: $currentPage) {
+                        StillImagePage(poller: hdmiPoller, recordingState: vm.recordingState)
+                            .tag(CameraPage.still)
+                        StillImagePage(poller: camPoller)
+                            .tag(CameraPage.live)
+                    }
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+
+                    HRule()
+
+                    switch currentPage {
+                    case .still:
+                        OperatorControlRow(
+                            isOwner: settings.ownerModeEnabled,
+                            recordingState: vm.recordingState,
+                            captureIsPlaceholder: false,
+                            onRecord: { Task { await vm.toggleBmpccRecord() } },
+                            onCapture: { Task { await vm.captureHdmiStill() } }
+                        )
+                    case .live:
+                        OperatorControlRow(
+                            isOwner: settings.ownerModeEnabled,
+                            recordingState: .idle,
+                            captureIsPlaceholder: false,
+                            showRecord: false,
+                            onRecord: {},
+                            onCapture: { Task { await vm.captureStill() } }
+                        )
+                    }
+                }
             }
         }
         .background(Theme.background)
@@ -137,9 +149,9 @@ struct CameraTabView: View {
         camPoller.fetchURL    = makeURL("/stills/latest")
     }
 
-    // MARK: – Data bar (BMPCC page only)
+    // MARK: – Data row (BMPCC page only)
 
-    private var stillDataBar: some View {
+    private var stillDataRow: some View {
         HStack(spacing: 0) {
             if vm.yoloLocked && vm.isRecording {
                 Text("AUTO")
@@ -221,7 +233,6 @@ struct CameraTabView: View {
 
             Spacer()
 
-            // Refresh countdown + button (replaces TC)
             HStack(spacing: 6) {
                 if let updated = hdmiPoller.lastUpdated {
                     TimelineView(.periodic(from: .now, by: 1)) { ctx in
@@ -241,7 +252,6 @@ struct CameraTabView: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 32)
-        .background(Theme.background)
         .frame(maxWidth: .infinity)
     }
 
@@ -255,28 +265,23 @@ struct CameraTabView: View {
     // MARK: – Page indicator
 
     private var pageIndicator: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 24) {
             ForEach(CameraPage.allCases, id: \.rawValue) { page in
                 Button {
                     withAnimation(.easeInOut(duration: 0.25)) { currentPage = page }
                 } label: {
-                    if page == currentPage {
-                        Text(page.label)
-                            .font(.system(size: 8, weight: .semibold, design: .monospaced))
-                            .tracking(1.8)
-                            .foregroundStyle(settings.activeColor)
-                    } else {
-                        Circle()
-                            .fill(Theme.rule)
-                            .frame(width: 5, height: 5)
-                    }
+                    Text(page.label)
+                        .font(.system(size: 11,
+                                      weight: page == currentPage ? .semibold : .regular,
+                                      design: .monospaced))
+                        .tracking(Theme.labelTracking)
+                        .foregroundStyle(page == currentPage ? settings.activeColor : Theme.tertiary)
                 }
                 .buttonStyle(.plain)
                 .animation(.easeInOut(duration: 0.2), value: currentPage)
             }
+            Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
     }
 }
 
@@ -347,64 +352,58 @@ private struct StillImagePage: View {
 
 // MARK: – Shared operator control row (BMPCC + CAM)
 
-private struct OperatorControlRow<Indicator: View>: View {
+private struct OperatorControlRow: View {
     let isOwner: Bool
     var recordingState: RecordingState = .idle
     let captureIsPlaceholder: Bool
     var showRecord: Bool = true
     let onRecord: () -> Void
     let onCapture: () -> Void
-    @ViewBuilder let indicator: () -> Indicator
 
-    @State private var captureFlash  = false
+    @State private var captureFlash    = false
     @State private var breatheOpacity: Double = 1.0
 
     var body: some View {
-        ZStack {
-            HStack(spacing: 0) {
-                if showRecord {
-                    Group {
-                        if isOwner {
-                            recordButton
-                        } else {
-                            Color.clear
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-
-                Color.clear.frame(maxWidth: .infinity)
-                Color.clear.frame(maxWidth: .infinity)
-
+        HStack(spacing: 0) {
+            if showRecord {
                 Group {
                     if isOwner {
-                        if captureIsPlaceholder {
-                            Text("HDMI PREVIEW")
-                                .font(Theme.dataLabel(size: 8))
-                                .tracking(Theme.labelTracking)
-                                .foregroundStyle(Color.white.opacity(0.4))
-                        } else {
-                            Button {
-                                withAnimation(.easeOut(duration: 0.08)) { captureFlash = true }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                                    withAnimation(.easeIn(duration: 0.08)) { captureFlash = false }
-                                }
-                                onCapture()
-                            } label: {
-                                Image(systemName: "camera.aperture")
-                                    .font(.system(size: 24))
-                                    .foregroundStyle(captureFlash ? Theme.recordingRed : Color.white.opacity(0.5))
-                            }
-                            .buttonStyle(.plain)
-                        }
+                        recordButton
                     } else {
                         Color.clear
                     }
                 }
                 .frame(maxWidth: .infinity)
+            } else {
+                Spacer()
             }
 
-            indicator()
+            Group {
+                if isOwner {
+                    if captureIsPlaceholder {
+                        Text("HDMI PREVIEW")
+                            .font(Theme.dataLabel(size: 8))
+                            .tracking(Theme.labelTracking)
+                            .foregroundStyle(Color.white.opacity(0.4))
+                    } else {
+                        Button {
+                            withAnimation(.easeOut(duration: 0.08)) { captureFlash = true }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                withAnimation(.easeIn(duration: 0.08)) { captureFlash = false }
+                            }
+                            onCapture()
+                        } label: {
+                            Image(systemName: "camera.aperture")
+                                .font(.system(size: 24))
+                                .foregroundStyle(captureFlash ? Theme.recordingRed : Color.white.opacity(0.5))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(maxWidth: .infinity)
         }
         .frame(height: 44)
         .padding(.bottom, 10)
