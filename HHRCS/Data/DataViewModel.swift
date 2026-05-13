@@ -374,6 +374,8 @@ final class DataViewModel: ObservableObject {
         let cpuTempC:                Double?
         let timecode:                String?
 
+        let dawnDuskEnabled:         Bool?
+
         let camReachable:            Bool?
         let camRecording:            Bool?
         let camCodec:                String?
@@ -416,6 +418,7 @@ final class DataViewModel: ObservableObject {
             case evValue                     = "ev"
             case cpuTempC                    = "cpu_temp_c"
             case timecode
+            case dawnDuskEnabled             = "dawn_dusk_enabled"
             case camReachable                = "cam_reachable"
             case camRecording                = "cam_recording"
             case camCodec                    = "cam_codec"
@@ -577,6 +580,11 @@ final class DataViewModel: ObservableObject {
                 break
             }
             isRecording = (recordingState == .recording)
+
+            // Dawn/dusk — Pi is source of truth; overwrite local UserDefaults on every poll
+            if let dd = poll.dawnDuskEnabled {
+                AppSettings.shared.dawnDuskWindows = dd
+            }
 
             // Machine state & YOLO lock
             let ms = poll.machineState ?? "IDLE"

@@ -796,6 +796,9 @@ struct SettingsTabView: View {
                     Toggle("", isOn: $settings.dawnDuskWindows)
                         .labelsHidden()
                         .toggleStyle(NeutralToggleStyle(activeColor: settings.activeColor))
+                        .onChange(of: settings.dawnDuskWindows) { _, newValue in
+                            Task { await postDawnDusk(enabled: newValue) }
+                        }
                 }
                 .padding(.vertical, 8)
             }
@@ -835,6 +838,17 @@ struct SettingsTabView: View {
         _ = try? await URLSession.shared.data(for: req)
         try? await Task.sleep(nanoseconds: 3_000_000_000)
         isRestartingDetector = false
+    }
+
+    private func postDawnDusk(enabled: Bool) async {
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty, let url = URL(string: base + "/settings/dawn_dusk") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["enabled": enabled])
+        req.timeoutInterval = 5
+        _ = try? await URLSession.shared.data(for: req)
     }
 
     // MARK: – NOTIFICATIONS
