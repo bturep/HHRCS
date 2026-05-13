@@ -337,7 +337,6 @@
       <div class="row"><span class="row-lbl">Gain</span>       <span class="row-val" id="cam-gain">—</span></div>
       <div class="row"><span class="row-lbl">Media Slot</span><span class="row-val" id="cam-slot">—</span></div>
       <div class="row"><span class="row-lbl">Rec Time Left</span><span class="row-val" id="cam-rectime">—</span></div>
-      <div class="row"><span class="row-lbl">Space Left</span><span class="row-val" id="cam-space">—</span></div>
       <div class="row"><span class="row-lbl">Lens</span>       <span class="row-val" id="cam-lens">—</span></div>
     </div>
 
@@ -404,17 +403,30 @@
   document.getElementById('offline-host').textContent = base;
 
   // ── Feed ────────────────────────────────────────────────────────────────────
-  let currentFeed = 'bmpcc';
+  // Tailscale Funnel uses HTTP/2 which doesn't support MJPEG (multipart/x-mixed-replace).
+  // Poll stills instead: trigger a capture then fetch the saved JPEG.
+  let currentFeed  = 'bmpcc';
+  let feedTimer    = null;
+  const FEED_POLL  = 5000; // ms
 
   function switchFeed(feed) {
     currentFeed = feed;
     document.getElementById('btn-bmpcc').classList.toggle('active', feed === 'bmpcc');
-    document.getElementById('btn-cam').classList.toggle('active', feed === 'cam');
+    document.getElementById('btn-cam').classList.toggle('active',   feed === 'cam');
     document.getElementById('badge-src').textContent = feed === 'bmpcc' ? 'BMPCC' : 'CAM';
-    showOffline(true);
+    clearInterval(feedTimer);
+    fetchFrame();
+    feedTimer = setInterval(fetchFrame, FEED_POLL);
+  }
+
+  async function fetchFrame() {
+    const triggerUrl = currentFeed === 'bmpcc' ? '/hdmi/still' : '/still/trigger';
+    const stillUrl   = currentFeed === 'bmpcc' ? '/hdmi/stills/latest' : '/stills/latest';
+    try {
+      await fetch(base + triggerUrl, { method: 'POST', cache: 'no-store' });
+    } catch { /* trigger failure is non-fatal — fetch last saved frame anyway */ }
     const img = document.getElementById('feed-img');
-    // MJPEG streams — browser handles the multipart natively
-    img.src = feed === 'bmpcc' ? base + '/hdmi-stream' : base + '/stream';
+    img.src = base + stillUrl + '?_=' + Date.now();
   }
 
   function showOffline(yes) {
@@ -444,6 +456,15 @@
     if (!s && s !== 0) return '—';
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
     return `${h}h ${String(m).padStart(2, '0')}m`;
+  }
+
+  function fmtSecs(s) {
+    if (s === null || s === undefined) return null;
+    s = Math.round(s);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return h > 0
+      ? `${h}h ${String(m).padStart(2,'0')}m`
+      : `${m}m ${String(sec).padStart(2,'0')}s`;
   }
 
   function agoStr(s) {
@@ -496,9 +517,7 @@
       set('cam-wb',      d.cam_white_balance != null ? d.cam_white_balance + ' K' : null);
       set('cam-gain',    d.cam_gain != null ? d.cam_gain + ' dB' : null);
       set('cam-slot',    d.cam_active_media_slot);
-      set('cam-rectime', d.cam_remaining_record_time);
-      set('cam-space',   d.cam_media_space_remaining_gb != null
-                           ? Number(d.cam_media_space_remaining_gb).toFixed(1) + ' GB' : null);
+      set('cam-rectime', fmtSecs(d.cam_remaining_record_time));
       set('cam-lens',    d.cam_lens);
 
       // ── Enclosure
