@@ -48,19 +48,19 @@
       margin-bottom: 2px;
     }
     .hdr-title {
-      font-size: 13px;
+      font-size: 16px;
       font-weight: 600;
       letter-spacing: 2.5px;
       text-transform: uppercase;
       color: var(--t1);
     }
-    .hdr-loc {
+    .hdr-sub {
       font-size: 10px;
       letter-spacing: 1.5px;
       text-transform: uppercase;
       color: var(--t3);
     }
-    .hdr-sub {
+    .hdr-loc {
       font-size: 10px;
       letter-spacing: 1.5px;
       text-transform: uppercase;
@@ -146,12 +146,6 @@
       text-transform: uppercase;
       padding: 3px 7px;
       border-radius: 2px;
-    }
-    .badge-src {
-      top: 10px; left: 10px;
-      color: var(--warm);
-      background: rgba(0,0,0,0.75);
-      border: 0.5px solid rgba(199,176,140,0.3);
     }
     .badge-rec {
       top: 10px; right: 10px;
@@ -278,10 +272,9 @@
 
   <!-- Header -->
   <div class="hdr">
-    <span class="hdr-title">HHRCS</span>
+    <span class="hdr-title">HHRCS <span class="hdr-sub">Hunter House Remote Camera System</span></span>
     <span class="hdr-loc">Prospect Lake &middot; Saanich, BC</span>
   </div>
-  <div class="hdr-sub">Hunter House Remote Camera System</div>
 
   <hr class="rule">
 
@@ -301,7 +294,6 @@
       <div class="feed-offline-lbl">No signal</div>
       <div class="feed-offline-sub" id="offline-host"></div>
     </div>
-    <div class="badge badge-src" id="badge-src">BMPCC</div>
     <div class="badge badge-rec" id="badge-rec"><div class="rec-dot"></div>REC</div>
   </div>
 
@@ -413,7 +405,6 @@
     currentFeed = feed;
     document.getElementById('btn-bmpcc').classList.toggle('active', feed === 'bmpcc');
     document.getElementById('btn-cam').classList.toggle('active',   feed === 'cam');
-    document.getElementById('badge-src').textContent = feed === 'bmpcc' ? 'BMPCC' : 'CAM';
     clearInterval(feedTimer);
     fetchFrame();
     feedTimer = setInterval(fetchFrame, FEED_POLL);
