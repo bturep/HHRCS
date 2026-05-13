@@ -397,7 +397,7 @@
   // ── Config ──────────────────────────────────────────────────────────────────
   // Default: Tailscale address. Override with ?host=http://... for other setups.
   const params  = new URLSearchParams(window.location.search);
-  const base    = (params.get('host') || 'http://hhrcs-pi:5001').replace(/\/$/, '');
+  const base    = (params.get('host') || 'https://hhrcs-pi.tail8fc77d.ts.net').replace(/\/$/, '');
   const REFRESH = 10; // seconds between /status polls
 
   document.getElementById('footer-host').textContent = base;
