@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HHRCS</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:            #0A0A0A;
+      --card-bg:       #191917;
+      --accent:        #C4714A;
+      --accent-orange: #FF8C00;
+      --text:          #FFFFFF;
+      --secondary:     #8C8C8C;
+      --tertiary:      #4D4D4D;
+      --rule:          #333333;
+      --dot-green:     #00C853;
+      --dot-amber:     #FFB300;
+      --dot-red:       #E53935;
+      --radius:        8px;
+      --mono:          'SF Mono', 'Fira Code', ui-monospace, 'Cascadia Code', monospace;
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 36px 20px 56px;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 3px;
+    }
+    .header-title {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 2.5px;
+      color: var(--text);
+      text-transform: uppercase;
+    }
+    .header-location {
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      color: var(--tertiary);
+      text-transform: uppercase;
+    }
+    .header-sub {
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      color: var(--tertiary);
+      text-transform: uppercase;
+      margin-bottom: 18px;
+    }
+
+    hr.rule {
+      border: none;
+      border-top: 0.5px solid var(--rule);
+      margin: 16px 0;
+    }
+
+    /* ── Overview grid ── */
+    .overview {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px 20px;
+      margin-bottom: 24px;
+    }
+    .ov-label {
+      font-size: 9px;
+      letter-spacing: 1.8px;
+      color: var(--tertiary);
+      text-transform: uppercase;
+      margin-bottom: 3px;
+    }
+    .ov-value {
+      font-size: 11px;
+      color: var(--text);
+    }
+    .ov-value.accent { color: var(--accent); }
+
+    /* ── Feed section ── */
+    .feed-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .feed-label {
+      font-size: 9px;
+      letter-spacing: 1.8px;
+      color: var(--tertiary);
+      text-transform: uppercase;
+    }
+
+    .toggle {
+      display: flex;
+      gap: 6px;
+    }
+    .toggle-btn {
+      background: transparent;
+      border: 0.5px solid var(--rule);
+      border-radius: 2px;
+      color: var(--tertiary);
+      font-family: var(--mono);
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: 1.8px;
+      text-transform: uppercase;
+      padding: 4px 9px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .toggle-btn.active {
+      color: var(--accent-orange);
+      border-color: var(--accent-orange);
+    }
+
+    /* ── Feed frame ── */
+    .feed-wrap {
+      background: #000;
+      border-radius: var(--radius);
+      overflow: hidden;
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .feed-img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+    .feed-offline {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+    .feed-offline-label {
+      font-size: 9px;
+      letter-spacing: 1.8px;
+      color: var(--tertiary);
+      text-transform: uppercase;
+    }
+    .feed-offline-sub {
+      font-size: 8px;
+      letter-spacing: 1.2px;
+      color: #2a2a2a;
+      text-transform: uppercase;
+    }
+
+    /* Corner badges */
+    .badge {
+      position: absolute;
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: 1.8px;
+      text-transform: uppercase;
+      padding: 3px 7px;
+      border-radius: 2px;
+    }
+    .badge-source {
+      top: 10px;
+      left: 10px;
+      color: var(--accent);
+      background: rgba(10,10,10,0.75);
+      border: 0.5px solid rgba(196,113,74,0.35);
+    }
+    .badge-rec {
+      top: 10px;
+      right: 10px;
+      display: none;
+      align-items: center;
+      gap: 5px;
+      color: var(--dot-red);
+      background: rgba(10,10,10,0.75);
+      border: 0.5px solid rgba(229,57,53,0.35);
+    }
+    .badge-rec.visible { display: flex; }
+    .rec-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--dot-red);
+      animation: blink 1.2s ease-in-out infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.25; }
+    }
+
+    /* ── Status row ── */
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+    }
+    .dot-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .dot-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--tertiary);
+      flex-shrink: 0;
+    }
+    .dot-lbl {
+      font-size: 9px;
+      letter-spacing: 1.2px;
+      color: var(--secondary);
+      text-transform: uppercase;
+    }
+    .timestamp {
+      font-size: 9px;
+      letter-spacing: 1.2px;
+      color: var(--tertiary);
+    }
+
+    @media (max-width: 560px) {
+      .overview { grid-template-columns: repeat(2, 1fr); }
+      .header-location { display: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <span class="header-title">HHRCS</span>
+    <span class="header-location">Prospect Lake &middot; Saanich, BC</span>
+  </div>
+  <div class="header-sub">Hunter House Remote Camera System</div>
+
+  <hr class="rule">
+
+  <!-- System overview -->
+  <div class="overview">
+    <div>
+      <div class="ov-label">Cinema Camera</div>
+      <div class="ov-value">BMPCC 6K Pro</div>
+    </div>
+    <div>
+      <div class="ov-label">Monitor Camera</div>
+      <div class="ov-value">Pi Cam Module 3</div>
+    </div>
+    <div>
+      <div class="ov-label">Detection</div>
+      <div class="ov-value">MegaDetector ONNX</div>
+    </div>
+    <div>
+      <div class="ov-label">Control</div>
+      <div class="ov-value">BMPCC REST API</div>
+    </div>
+    <div>
+      <div class="ov-label">Agent</div>
+      <div class="ov-value accent">Rule + Claude Haiku</div>
+    </div>
+    <div>
+      <div class="ov-label">Platform</div>
+      <div class="ov-value">Raspberry Pi 4</div>
+    </div>
+  </div>
+
+  <hr class="rule">
+
+  <!-- Feed -->
+  <div class="feed-header">
+    <span class="feed-label">Live Feed</span>
+    <div class="toggle">
+      <button class="toggle-btn active" id="btn-bmpcc" onclick="switchFeed('bmpcc')">BMPCC</button>
+      <button class="toggle-btn"        id="btn-cam"   onclick="switchFeed('cam')">CAM</button>
+    </div>
+  </div>
+
+  <div class="feed-wrap">
+    <img class="feed-img" id="feed-img" src="" alt="">
+    <div class="feed-offline" id="offline">
+      <div class="feed-offline-label">No signal</div>
+      <div class="feed-offline-sub" id="offline-host"></div>
+    </div>
+    <div class="badge badge-source" id="badge-source">BMPCC</div>
+    <div class="badge badge-rec"    id="badge-rec"><div class="rec-dot"></div>REC</div>
+  </div>
+
+  <!-- Status -->
+  <div class="status-row">
+    <div class="dot-group">
+      <div class="dot-item"><div class="dot" id="dot-pi"></div><span class="dot-lbl">Pi</span></div>
+      <div class="dot-item"><div class="dot" id="dot-cam"></div><span class="dot-lbl">Cam</span></div>
+      <div class="dot-item"><div class="dot" id="dot-esp"></div><span class="dot-lbl">ESP32</span></div>
+    </div>
+    <span class="timestamp" id="timestamp">&mdash;</span>
+  </div>
+
+</div>
+
+<script>
+  // ── Config ─────────────────────────────────────────────────────────────────
+  // Served from the Pi itself → `base` is empty and requests are same-origin.
+  // Shared cross-origin → append ?host=http://hhrcs-pi:5001 to the URL.
+  const params = new URLSearchParams(window.location.search);
+  const base   = (params.get('host') || '').replace(/\/$/, '');
+
+  document.getElementById('offline-host').textContent = base || window.location.host;
+
+  // ── State ───────────────────────────────────────────────────────────────────
+  let currentFeed = 'bmpcc';
+  let pollTimer   = null;
+
+  // ── Feed ────────────────────────────────────────────────────────────────────
+  function switchFeed(feed) {
+    currentFeed = feed;
+
+    document.getElementById('btn-bmpcc').classList.toggle('active', feed === 'bmpcc');
+    document.getElementById('btn-cam').classList.toggle('active',   feed === 'cam');
+    document.getElementById('badge-source').textContent = feed === 'bmpcc' ? 'BMPCC' : 'CAM';
+
+    clearInterval(pollTimer);
+    pollTimer = null;
+
+    const img = document.getElementById('feed-img');
+    showOffline(true);
+
+    if (feed === 'cam') {
+      img.onload  = () => showOffline(false);
+      img.onerror = () => showOffline(true);
+      img.src     = base + '/stream';
+    } else {
+      img.onload  = () => showOffline(false);
+      img.onerror = () => showOffline(true);
+      fetchStill();
+      pollTimer = setInterval(fetchStill, 3000);
+    }
+  }
+
+  function fetchStill() {
+    document.getElementById('feed-img').src = base + '/stills/latest?_=' + Date.now();
+  }
+
+  function showOffline(yes) {
+    document.getElementById('offline').style.display   = yes ? 'flex'  : 'none';
+    document.getElementById('feed-img').style.opacity  = yes ? '0'     : '1';
+  }
+
+  // ── Status polling ──────────────────────────────────────────────────────────
+  async function pollStatus() {
+    try {
+      const r    = await fetch(base + '/status', { cache: 'no-store' });
+      const data = await r.json();
+
+      dot('dot-pi', 'green');
+
+      const esp = data.esp32_connected ?? data.esp32?.connected ?? null;
+      dot('dot-esp', esp === false ? 'amber' : 'green');
+
+      const rec = data.recording === true || data.is_recording === true;
+      dot('dot-cam', rec ? 'red' : 'green');
+      document.getElementById('badge-rec').classList.toggle('visible', rec);
+
+      document.getElementById('timestamp').textContent =
+        new Date().toLocaleTimeString('en-CA', {
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+        });
+    } catch {
+      dot('dot-pi',  'dim');
+      dot('dot-esp', 'dim');
+      dot('dot-cam', 'dim');
+    }
+  }
+
+  function dot(id, state) {
+    const map = { green: '#00C853', amber: '#FFB300', red: '#E53935', dim: '#4D4D4D' };
+    document.getElementById(id).style.background = map[state] ?? map.dim;
+  }
+
+  // ── Init ────────────────────────────────────────────────────────────────────
+  switchFeed('bmpcc');
+  pollStatus();
+  setInterval(pollStatus, 10000);
+</script>
+
+</body>
+</html>
