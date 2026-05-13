@@ -3,6 +3,31 @@ import SwiftUI
 import UIKit
 #endif
 
+// ── Diagnostic dot → /status field → threshold mapping ──────────────────────
+//
+// PI      healthPiReachable      TCP poll success → green; failure → red
+//
+// BMPCC   camReachable           cam_reachable → green/red; grey if PI down
+//
+// CAM     healthPiReachable      Pi reachable implies Pi Camera Module 3 active
+//                                green if PI up, grey if PI down
+//
+// YOLO    healthYoloRunning      yolo_running → green/red; grey if PI down
+//
+// HDMI    hdmiReachable          hdmi_reachable → green/red; grey if PI down
+//
+// PI SD   piSdUsedPct            pi_sd_used_pct (df on "/" = microSD boot disk)
+//                                <80% → green; 80–95% → yellow; >95% → red; grey if PI down
+//
+// CAM SD  camActiveMediaSlot     cam_active_media_slot (workingset activeDisk entry)
+//                                contains "sd" → green; else → grey
+//                                remaining time shown only when SD is active slot
+//
+// CAM CF  camActiveMediaSlot     cam_active_media_slot (same field)
+//                                contains "cfast"/"cf" → green; else → grey
+//                                remaining time shown only when CF is active slot
+// ────────────────────────────────────────────────────────────────────────────
+
 // MARK: – Panel state machine
 
 enum DiagnosticPanelMode: Equatable {
@@ -12,11 +37,23 @@ enum DiagnosticPanelMode: Equatable {
 }
 
 enum DiagnosticDot: String, CaseIterable {
-    case pi     = "PI"
-    case bridge = "BRIDGE"
-    case ble    = "BLE"
-    case yolo   = "YOLO"
-    case ssd    = "SSD"
+    // Connectivity row
+    case pi    = "PI"
+    case bmpcc = "BMPCC"
+    case cam   = "CAM"
+    case yolo  = "YOLO"
+    case hdmi  = "HDMI"
+    // Storage row
+    case piSd  = "PI SD"
+    case camSd = "CAM SD"
+    case camCf = "CAM CF"
+
+    var isStorageDot: Bool {
+        switch self {
+        case .piSd, .camSd, .camCf: return true
+        default: return false
+        }
+    }
 }
 
 // MARK: – Recovery step model
@@ -54,7 +91,7 @@ struct RecoveryFlowView: View {
                 Text(title)
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .tracking(2.0)
-                    .foregroundStyle(Theme.accentOrange)
+                    .foregroundStyle(Theme.text2)
                 Spacer()
             }
             .padding(.top, 12)
@@ -100,7 +137,7 @@ struct RecoveryFlowView: View {
                 .frame(width: 8, height: 8)
         case .running:
             Circle()
-                .fill(Theme.accentOrange)
+                .fill(Theme.ok)
                 .frame(width: 8, height: 8)
         case .success:
             Image(systemName: "checkmark")
@@ -118,7 +155,7 @@ struct RecoveryFlowView: View {
     private func labelColor(_ state: StepState) -> Color {
         switch state {
         case .pending:          return Theme.tertiary
-        case .running:          return Theme.accentOrange
+        case .running:          return Theme.ok
         case .success, .failed: return Theme.secondary
         }
     }
@@ -173,7 +210,7 @@ struct PiDetailView: View {
         VStack(spacing: 0) {
             diagRow("STATUS",
                     value:      vm.healthPiReachable ? "Reachable" : "Unreachable",
-                    valueColor: vm.healthPiReachable ? Theme.accentOrange : Theme.dotRed)
+                    valueColor: vm.healthPiReachable ? Theme.ok : Theme.dotRed)
             HRule()
             diagRow("LAST POLL",
                     value:      vm.healthLastPollAt.map { Self.fmt.string(from: $0) } ?? "—",
@@ -189,122 +226,114 @@ struct PiDetailView: View {
     }
 }
 
-// MARK: – Bridge detail
+// MARK: – BMPCC detail (was CamDetailView)
 
-struct BridgeDetailView: View {
+struct BmpccDetailView: View {
     @EnvironmentObject var vm: DataViewModel
     @State private var showingRecovery = false
+
+    private static let fmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        f.timeZone   = TimeZone(identifier: "America/Vancouver")
+        return f
+    }()
 
     var body: some View {
         VStack(spacing: 0) {
             if showingRecovery {
-                RecoveryFlowView(title: "RESTART BRIDGE",
-                                 steps: bridgeSteps(),
+                RecoveryFlowView(title: "CAM RECOVERY",
+                                 steps: camSteps(),
                                  onBack: { showingRecovery = false })
             } else {
-                diagRow("BRIDGE",
-                        value:      vm.healthBridgeReachable ? "Reachable" : "Unreachable",
-                        valueColor: vm.healthBridgeReachable ? Theme.accentOrange : Theme.dotRed)
+                diagRow("STATUS",
+                        value:      vm.camReachable ? "Reachable" : "Unreachable",
+                        valueColor: vm.camReachable ? Theme.ok : Theme.dotRed)
                 HRule()
-                diagRow("BLE STATE",
-                        value:      vm.healthEsp32BleState,
-                        valueColor: vm.healthBleConnected ? Theme.accentOrange : Theme.secondary)
+                diagRow("RECORDING",
+                        value:      vm.camRecording ? "Recording" : "Idle",
+                        valueColor: vm.camRecording ? Theme.dotRed : Theme.secondary)
                 HRule()
-                diagRecoveryButton("RESTART BRIDGE") { showingRecovery = true }
+                diagRow("FORMAT",
+                        value:      "\(vm.camCodec) @ \(vm.camFrameRate)",
+                        valueColor: Theme.secondary)
+                HRule()
+                diagRow("RESOLUTION",
+                        value:      vm.camResolution,
+                        valueColor: Theme.secondary)
+                HRule()
+                diagRow("ISO",
+                        value:      vm.camIso.map { "\($0)" } ?? "—",
+                        valueColor: Theme.secondary)
+                HRule()
+                diagRow("WB",
+                        value:      vm.camWhiteBalance.map { "\($0)K" } ?? "—",
+                        valueColor: Theme.secondary)
+                HRule()
+                diagRow("MEDIA",
+                        value:      vm.camActiveMediaSlot,
+                        valueColor: Theme.secondary)
+                HRule()
+                diagRow("LAST POLL",
+                        value:      vm.healthLastPollAt.map { Self.fmt.string(from: $0) } ?? "—",
+                        valueColor: Theme.secondary)
+                HRule()
+                diagRecoveryButton("CAM RECOVERY") { showingRecovery = true }
             }
         }
     }
 
-    private func bridgeSteps() -> [RecoveryStep] {
+    private func camSteps() -> [RecoveryStep] {
         let base = AppSettings.shared.piServerURL
         return [
-            RecoveryStep(label: "RESTARTING BRIDGE SERVICE") {
-                guard let url = URL(string: base + "/system/restart-bridge") else { return .fail("Bad URL") }
-                var req = URLRequest(url: url); req.httpMethod = "POST"; req.timeoutInterval = 8
-                _ = try? await URLSession.shared.data(for: req)
-                return .pass("Sent")
-            },
-            RecoveryStep(label: "WAITING FOR BRIDGE") {
-                for _ in 0..<16 {
+            RecoveryStep(label: "PINGING CAMERA") {
+                await vm.refreshHealth()
+                for _ in 0..<10 {
                     try? await Task.sleep(nanoseconds: 500_000_000)
                     await vm.refreshHealth()
-                    if vm.healthBridgeReachable { return .pass("Reachable") }
+                    if vm.camReachable { return .pass("Reachable") }
                 }
-                return .fail("Timeout")
+                return .fail("Check ethernet cable, camera power, and adapter LED")
             },
-            RecoveryStep(label: "WAITING FOR BLE") {
-                for _ in 0..<20 {
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    await vm.refreshHealth()
-                    if vm.healthBleConnected { return .pass("Connected") }
+            RecoveryStep(label: "CHECKING API") {
+                guard let url = URL(string: base + "/camera/status") else { return .fail("Bad URL") }
+                var req = URLRequest(url: url); req.timeoutInterval = 5
+                if let (_, resp) = try? await URLSession.shared.data(for: req),
+                   (resp as? HTTPURLResponse)?.statusCode == 200 {
+                    return .pass("200 OK")
                 }
-                return .fail("BLE not connecting")
+                return .fail("API not responding")
             },
             RecoveryStep(label: "VERIFYING") {
                 await vm.refreshHealth()
-                if vm.healthBridgeReachable && vm.healthBleConnected { return .pass("All clear") }
-                return vm.healthBridgeReachable ? .fail("BLE not connected") : .fail("Bridge still down")
+                return vm.camReachable ? .pass("All clear") : .fail("Still unreachable")
             },
         ]
     }
 }
 
-// MARK: – BLE / ESP32 detail
+// MARK: – CAM detail (Pi Camera Module 3)
 
-struct BleDetailView: View {
+struct CamDetailView: View {
     @EnvironmentObject var vm: DataViewModel
-    @State private var showingRecovery = false
 
     var body: some View {
         VStack(spacing: 0) {
-            if showingRecovery {
-                RecoveryFlowView(title: "RECOVER ESP32",
-                                 steps: bleSteps(),
-                                 onBack: { showingRecovery = false })
-            } else {
-                diagRow("BLE STATE",
-                        value:      vm.healthEsp32BleState,
-                        valueColor: vm.healthBleConnected ? Theme.accentOrange : Theme.dotRed)
-                HRule()
-                diagRow("BRIDGE",
-                        value:      vm.healthBridgeReachable ? "Reachable" : "Unreachable",
-                        valueColor: vm.healthBridgeReachable ? Theme.accentOrange : Theme.secondary)
-                HRule()
-                diagRecoveryButton("RECOVER ESP32") { showingRecovery = true }
-            }
+            diagRow("MODULE",
+                    value:      "Pi Camera Module 3",
+                    valueColor: Theme.secondary)
+            HRule()
+            diagRow("STREAM",
+                    value:      vm.healthPiReachable ? "Active" : "Unavailable",
+                    valueColor: vm.healthPiReachable ? Theme.ok : Theme.dotRed)
+            HRule()
+            Text("MJPEG STREAM ON :5001/STREAM")
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .tracking(1.0)
+                .foregroundStyle(Theme.tertiary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 10)
         }
-    }
-
-    private func bleSteps() -> [RecoveryStep] {
-        let base = AppSettings.shared.piServerURL
-        return [
-            RecoveryStep(label: "SENDING ESP32 RESET") {
-                guard let url = URL(string: base + "/system/reset-esp32") else { return .fail("Bad URL") }
-                var req = URLRequest(url: url); req.httpMethod = "POST"; req.timeoutInterval = 8
-                _ = try? await URLSession.shared.data(for: req)
-                return .pass("Sent")
-            },
-            RecoveryStep(label: "WAITING FOR DISCONNECT") {
-                for _ in 0..<10 {
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    await vm.refreshHealth()
-                    if !vm.healthBleConnected { return .pass("Disconnected") }
-                }
-                return .pass("Cycling")
-            },
-            RecoveryStep(label: "WAITING FOR RECONNECT") {
-                for _ in 0..<24 {
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    await vm.refreshHealth()
-                    if vm.healthBleConnected { return .pass("Connected") }
-                }
-                return .fail("BLE not reconnecting")
-            },
-            RecoveryStep(label: "VERIFYING") {
-                await vm.refreshHealth()
-                return vm.healthBleConnected ? .pass("Connected") : .fail("Still disconnected")
-            },
-        ]
     }
 }
 
@@ -323,11 +352,7 @@ struct YoloDetailView: View {
             } else {
                 diagRow("STATUS",
                         value:      vm.healthYoloRunning ? "Running" : "Not running",
-                        valueColor: vm.healthYoloRunning ? Theme.accentOrange : Theme.dotRed)
-                HRule()
-                diagRow("MODE",
-                        value:      vm.healthYoloSimMode ? "Simulation" : "Live inference",
-                        valueColor: vm.healthYoloSimMode ? Theme.dotAmber : Theme.accentOrange)
+                        valueColor: vm.healthYoloRunning ? Theme.ok : Theme.dotRed)
                 HRule()
                 diagRow("LAST INFER",
                         value:      vm.healthDetectLastAgoSec.map { String(format: "%.0fs ago", $0) } ?? "—",
@@ -356,12 +381,6 @@ struct YoloDetailView: View {
                 }
                 return .fail("Timeout")
             },
-            RecoveryStep(label: "CHECKING INFERENCE MODE") {
-                await vm.refreshHealth()
-                if vm.healthYoloRunning && !vm.healthYoloSimMode { return .pass("Live inference") }
-                if vm.healthYoloRunning &&  vm.healthYoloSimMode { return .pass("Sim mode") }
-                return .fail("Detector not running")
-            },
             RecoveryStep(label: "VERIFYING") {
                 await vm.refreshHealth()
                 return vm.healthYoloRunning ? .pass("OK") : .fail("Still not running")
@@ -370,26 +389,22 @@ struct YoloDetailView: View {
     }
 }
 
-// MARK: – SSD detail
+// MARK: – PI SD detail (Pi microSD boot disk)
 
-struct SsdDetailView: View {
+struct PiSdDetailView: View {
     @EnvironmentObject var vm: DataViewModel
 
     var body: some View {
         VStack(spacing: 0) {
-            diagRow("STATUS",
-                    value:      vm.healthSsdMounted ? "Mounted" : "Not mounted",
-                    valueColor: vm.healthSsdMounted ? Theme.accentOrange : Theme.dotRed)
-            HRule()
-            diagRow("FREE",
-                    value:      vm.healthSsdMounted ? String(format: "%.1f%%", vm.healthSsdFreePct) : "—",
-                    valueColor: ssdFreeColor)
-            HRule()
-            diagRow("STORAGE",
-                    value:      vm.healthSsdMounted ? String(format: "%.1f GB", vm.ssdRemainingGB) : "—",
+            diagRow("DEVICE",
+                    value:      "Pi microSD (boot, /)",
                     valueColor: Theme.secondary)
             HRule()
-            Text("PHYSICAL ACCESS REQUIRED FOR REMOUNTING")
+            diagRow("USED",
+                    value:      vm.piSdUsedPct.map { String(format: "%.1f%%", $0) } ?? "—",
+                    valueColor: piSdColor)
+            HRule()
+            Text("WRITE WORKLOAD: METRICS · EVENTS · MODEL · LOGS")
                 .font(.system(size: 9, weight: .regular, design: .monospaced))
                 .tracking(1.0)
                 .foregroundStyle(Theme.tertiary)
@@ -398,11 +413,97 @@ struct SsdDetailView: View {
         }
     }
 
-    private var ssdFreeColor: Color {
-        guard vm.healthSsdMounted else { return Theme.tertiary }
-        if vm.healthSsdFreePct < 5  { return Theme.dotRed }
-        if vm.healthSsdFreePct < 10 { return Theme.dotAmber }
-        return Theme.accentOrange
+    private var piSdColor: Color {
+        guard let used = vm.piSdUsedPct else { return Theme.tertiary }
+        if used > 95 { return Theme.dotRed }
+        if used > 80 { return Theme.dotAmber }
+        return Theme.ok
+    }
+}
+
+// MARK: – CAM SD detail (BMPCC SD slot)
+
+struct CamSdDetailView: View {
+    @EnvironmentObject var vm: DataViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            let isActive = vm.camActiveMediaSlot.lowercased().contains("sd")
+            diagRow("ACTIVE",
+                    value:      isActive ? "Yes" : "No",
+                    valueColor: isActive ? Theme.text1 : Theme.secondary)
+            HRule()
+            if isActive {
+                diagRow("REMAINING",
+                        value:      vm.camRemainingRecordTime.map { "\($0 / 60)m \($0 % 60)s" } ?? "—",
+                        valueColor: Theme.secondary)
+                HRule()
+            }
+            diagRow("SLOT",   value: "SD Card (Slot 2)", valueColor: Theme.secondary)
+            HRule()
+            Text("PHYSICAL ACCESS REQUIRED FOR MEDIA SWAP")
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .tracking(1.0)
+                .foregroundStyle(Theme.tertiary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 10)
+        }
+    }
+}
+
+// MARK: – CAM CF detail (BMPCC CFast slot)
+
+struct CamCfDetailView: View {
+    @EnvironmentObject var vm: DataViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            let slot = vm.camActiveMediaSlot.lowercased()
+            let isActive = slot.contains("cfast") || slot.contains("cf")
+            diagRow("ACTIVE",
+                    value:      isActive ? "Yes" : "No",
+                    valueColor: isActive ? Theme.text1 : Theme.secondary)
+            HRule()
+            if isActive {
+                diagRow("REMAINING",
+                        value:      vm.camRemainingRecordTime.map { "\($0 / 60)m \($0 % 60)s" } ?? "—",
+                        valueColor: Theme.secondary)
+                HRule()
+            }
+            diagRow("SLOT",   value: "CFast 2.0 (Slot 1)", valueColor: Theme.secondary)
+            HRule()
+            Text("PHYSICAL ACCESS REQUIRED FOR MEDIA SWAP")
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .tracking(1.0)
+                .foregroundStyle(Theme.tertiary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 10)
+        }
+    }
+}
+
+// MARK: – HDMI detail
+
+struct HdmiDetailView: View {
+    @EnvironmentObject var vm: DataViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            diagRow("STATUS",
+                    value:      vm.hdmiReachable ? "Streaming" : "Offline",
+                    valueColor: vm.hdmiReachable ? Theme.ok : Theme.dotRed)
+            HRule()
+            diagRow("DEVICE", value: "/dev/video2", valueColor: Theme.secondary)
+            HRule()
+            diagRow("FORMAT", value: "MJPEG 1920×1080 @ 25fps", valueColor: Theme.secondary)
+            HRule()
+            Text("GUERMOK USB2 VIDEO CAPTURE — CHECK USB CONNECTION")
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .tracking(1.0)
+                .foregroundStyle(Theme.tertiary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 10)
+        }
     }
 }
 
@@ -432,7 +533,7 @@ private func diagRecoveryButton(_ label: String, action: @escaping () -> Void) -
     } label: {
         Text("\(label) →")
             .font(.system(size: 10, weight: .medium, design: .monospaced))
-            .foregroundStyle(Theme.accentOrange)
+            .foregroundStyle(Theme.text1)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
     }

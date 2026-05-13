@@ -19,6 +19,8 @@ struct CapturedStill: Identifiable {
         self.sessionId      = sessionId
     }
 
+    var sourceLabel: String { triggerType == "hdmi" ? "BMPCC" : "CAM" }
+
     static func simulatedEntries() -> [CapturedStill] {
         let now     = Date()
         let offsets: [TimeInterval] = [-300, -1800, -7200, -18000, -86400, -90000]

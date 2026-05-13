@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import SwiftUI
 
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
@@ -12,6 +13,9 @@ final class AppSettings: ObservableObject {
     }
     @Published var longitude: Double {
         didSet { UserDefaults.standard.set(longitude, forKey: Keys.longitude) }
+    }
+    @Published var deploymentAddress: String {
+        didSet { UserDefaults.standard.set(deploymentAddress, forKey: Keys.deploymentAddress) }
     }
     @Published var piServerURL: String {
         didSet { UserDefaults.standard.set(piServerURL, forKey: Keys.piServerURL) }
@@ -69,8 +73,11 @@ final class AppSettings: ObservableObject {
     }
 
     // MARK: – Notification category toggles
-    @Published var notifyRecording: Bool {
-        didSet { UserDefaults.standard.set(notifyRecording, forKey: Keys.notifyRecording) }
+    @Published var notifyRecordings: Bool {
+        didSet { UserDefaults.standard.set(notifyRecordings, forKey: Keys.notifyRecordings) }
+    }
+    @Published var notifyStills: Bool {
+        didSet { UserDefaults.standard.set(notifyStills, forKey: Keys.notifyStills) }
     }
     @Published var notifyDetections: Bool {
         didSet { UserDefaults.standard.set(notifyDetections, forKey: Keys.notifyDetections) }
@@ -78,6 +85,17 @@ final class AppSettings: ObservableObject {
     @Published var notifyDeployments: Bool {
         didSet { UserDefaults.standard.set(notifyDeployments, forKey: Keys.notifyDeployments) }
     }
+    @Published var notifySystemAlerts: Bool {
+        didSet { UserDefaults.standard.set(notifySystemAlerts, forKey: Keys.notifySystemAlerts) }
+    }
+    @Published var notifyAgentActivity: Bool {
+        didSet { UserDefaults.standard.set(notifyAgentActivity, forKey: Keys.notifyAgentActivity) }
+    }
+
+    // MARK: – WARM UI
+    @AppStorage("ui.warmAccent") var warmUI: Bool = true
+
+    var activeColor: Color { warmUI ? Theme.warmAccent : Theme.text1 }
 
     // MARK: – Owner Mode
     @Published var ownerModeEnabled: Bool {
@@ -103,6 +121,7 @@ final class AppSettings: ObservableObject {
         static let positionName             = "hhrcs.positionName"
         static let latitude                 = "hhrcs.latitude"
         static let longitude                = "hhrcs.longitude"
+        static let deploymentAddress        = "hhrcs.deploymentAddress"
         static let piServerURL              = "hhrcs.piServerURL"
         static let savedServerURLs          = "hhrcs.savedServerURLs"
         static let simulationMode           = "hhrcs.simulationMode"
@@ -116,9 +135,12 @@ final class AppSettings: ObservableObject {
         static let anthropicAPIKey          = "hhrcs.anthropicAPIKey"
         static let ownerModeEnabled         = "hhrcs.ownerModeEnabled"
         static let ownerPassword            = "hhrcs.ownerPassword"
-        static let notifyRecording          = "hhrcs.notifyRecording"
+        static let notifyRecordings         = "hhrcs.notifyRecordings"
+        static let notifyStills             = "hhrcs.notifyStills"
         static let notifyDetections         = "hhrcs.notifyDetections"
         static let notifyDeployments        = "hhrcs.notifyDeployments"
+        static let notifySystemAlerts       = "hhrcs.notifySystemAlerts"
+        static let notifyAgentActivity      = "hhrcs.notifyAgentActivity"
     }
 
     // TODO: INSERT ANTHROPIC_API_KEY HERE
@@ -130,6 +152,7 @@ final class AppSettings: ObservableObject {
         positionName             = ud.string(forKey: Keys.positionName) ?? "POSITION 1"
         latitude                 = ud.object(forKey: Keys.latitude)  as? Double ?? 48.515
         longitude                = ud.object(forKey: Keys.longitude) as? Double ?? -123.408
+        deploymentAddress        = ud.string(forKey: Keys.deploymentAddress) ?? ""
         let storedURLs           = ud.stringArray(forKey: Keys.savedServerURLs) ?? []
         let defaultURLs          = storedURLs.isEmpty
             ? ["http://raspberrypi.local:5001", "http://100.118.27.125:5001"]
@@ -147,8 +170,11 @@ final class AppSettings: ObservableObject {
         anthropicAPIKey          = ud.string(forKey: Keys.anthropicAPIKey) ?? Self.anthropicAPIKeyDefault
         ownerModeEnabled         = ud.object(forKey: Keys.ownerModeEnabled) as? Bool ?? false
         ownerPassword            = ud.string(forKey: Keys.ownerPassword) ?? "0000"
-        notifyRecording          = ud.object(forKey: Keys.notifyRecording)    as? Bool ?? true
-        notifyDetections         = ud.object(forKey: Keys.notifyDetections)   as? Bool ?? true
-        notifyDeployments        = ud.object(forKey: Keys.notifyDeployments)  as? Bool ?? true
+        notifyRecordings         = ud.object(forKey: Keys.notifyRecordings)      as? Bool ?? true
+        notifyStills             = ud.object(forKey: Keys.notifyStills)          as? Bool ?? true
+        notifyDetections         = ud.object(forKey: Keys.notifyDetections)      as? Bool ?? true
+        notifyDeployments        = ud.object(forKey: Keys.notifyDeployments)     as? Bool ?? true
+        notifySystemAlerts       = ud.object(forKey: Keys.notifySystemAlerts)    as? Bool ?? true
+        notifyAgentActivity      = ud.object(forKey: Keys.notifyAgentActivity)   as? Bool ?? false
     }
 }

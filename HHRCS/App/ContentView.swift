@@ -12,8 +12,8 @@ private struct TabDef {
 }
 
 private let appTabs: [TabDef] = [
-    .init(label: "FIELD",    icon: "doc.text",      tag: 0),
-    .init(label: "FEED",     icon: "camera",        tag: 1),
+    .init(label: "FEED",     icon: "camera",        tag: 0),
+    .init(label: "FIELD",    icon: "doc.text",      tag: 1),
     .init(label: "DATA",     icon: "gauge.medium",  tag: 2),
     .init(label: "SETTINGS", icon: "gearshape",     tag: 3),
 ]
@@ -48,7 +48,7 @@ struct ContentView: View {
             if !isLaunched {
                 LaunchView { targetTab in
                     selectedTab = targetTab
-                    withAnimation(.easeIn(duration: 0.3)) { isLaunched = true }
+                    withAnimation(.easeIn(duration: 0.5)) { isLaunched = true }
                 }
                 .transition(.opacity)
                 .zIndex(1)
@@ -69,12 +69,12 @@ struct ContentView: View {
 
     private var tabContent: some View {
         ZStack {
-            NotesTabView()
+            CameraTabView(isActive: selectedTab == 0)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .opacity(selectedTab == 0 ? 1 : 0)
                 .allowsHitTesting(selectedTab == 0)
 
-            CameraTabView(isActive: selectedTab == 1)
+            NotesTabView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .opacity(selectedTab == 1 ? 1 : 0)
                 .allowsHitTesting(selectedTab == 1)
@@ -99,6 +99,7 @@ private struct AppTabBar: View {
     @Binding var selectedTab: Int
     @EnvironmentObject var orientationObserver: DeviceOrientationObserver
     @EnvironmentObject var dataVM: DataViewModel
+    @ObservedObject private var settings = AppSettings.shared
 
     private var isLandscape: Bool { orientationObserver.orientation.isLandscape }
 
@@ -156,9 +157,9 @@ private struct AppTabBar: View {
     }
 
     private func tabForeground(_ tab: TabDef) -> Color {
-        if tab.tag == 1 && (dataVM.isRecording || dataVM.isPiCamRecording) {
+        if tab.tag == 0 && (dataVM.isRecording || dataVM.isPiCamRecording) {
             return Theme.recordingRed
         }
-        return selectedTab == tab.tag ? Theme.accentOrange : Color(white: 0.38)
+        return selectedTab == tab.tag ? settings.activeColor : Theme.text3
     }
 }

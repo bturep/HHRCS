@@ -16,6 +16,7 @@ class Config:
     timezone: str = "America/Vancouver"
 
     # Recording windows
+    dawn_dusk_enabled: bool = False        # False = window always open; True = only open during dawn/dusk
     dawn_offset_minutes: int = -10        # open before civil twilight
     dawn_close_minutes: int = 90          # close after sunrise
     dusk_open_minutes: int = -90          # open before sunset
@@ -55,13 +56,9 @@ class Config:
     format: str = "BRAW 12:1"
     resolution: str = "6K"
 
-    # BLE
-    ble_reconnect_interval: int = 10
-
     # Pi
     pi_cam_resolution: Tuple[int, int] = (1152, 648)
     pi_cam_sensor_mode: Tuple[int, int] = (2304, 1296)
-    still_interval_minutes: int = 30
 
     # API
     api_host: str = "0.0.0.0"
@@ -75,11 +72,21 @@ class Config:
 # Singleton
 config = Config()
 
+# ── BMPCC Camera (ethernet) ────────────────────────────────────────────────────
+CAMERA_BASE_URL = "http://192.168.10.2/control/api/v1"
+CAMERA_REQUEST_TIMEOUT = 3
+
 # ── Push notifications (ntfy.sh) ───────────────────────────────────────────────
 NTFY_TOPIC = "hhrcs-4a4a678c"
 NTFY_BASE_URL = "https://ntfy.sh"
 NOTIFIER_INTERVAL_SECONDS = 300
 NOTIFIER_DEDUP_HOURS = 6
+
+# ── HDMI capture card (Guermok USB2 Video) ────────────────────────────────────
+HDMI_DEVICE = "/dev/video2"
+HDMI_WIDTH  = 1920
+HDMI_HEIGHT = 1080
+HDMI_FPS    = 25
 
 # ── Layer 1 push notifications (in-app) ────────────────────────────────────────
 NOTIFICATIONS_MAX_STORED = 500

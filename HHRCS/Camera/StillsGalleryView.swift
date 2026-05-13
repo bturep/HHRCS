@@ -3,6 +3,8 @@ import SwiftUI
 struct StillsGalleryView: View {
     @EnvironmentObject var vm: DataViewModel
 
+    @State private var pendingDelete: CapturedStill? = nil
+
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "dd MMM HH:mm:ss"
@@ -16,20 +18,43 @@ struct StillsGalleryView: View {
     ]
 
     var body: some View {
-        if vm.stills.isEmpty {
-            emptyState
-        } else {
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(vm.stills) { still in
-                        StillCell(still: still, timeFormatter: Self.timeFormatter) {
-                        vm.stills.removeAll { $0.id == still.id }
+        ZStack {
+            if vm.stills.isEmpty {
+                emptyState
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(vm.stills) { still in
+                            StillCell(still: still, timeFormatter: Self.timeFormatter,
+                                      onRequestDelete: { pendingDelete = still }) {
+                                vm.stills.removeAll { $0.id == still.id }
+                            }
+                        }
                     }
-                    }
+                    .padding(Theme.pagePadding)
                 }
-                .padding(Theme.pagePadding)
+                .scrollIndicators(.hidden)
+                .background(Theme.background)
             }
-            .background(Theme.background)
+
+            if let still = pendingDelete {
+                Color.black.opacity(0.30)
+                    .ignoresSafeArea()
+                    .onTapGesture { pendingDelete = nil }
+
+                ConfirmationCard(
+                    title:        "DELETE STILL?",
+                    message:      "This cannot be undone.",
+                    confirmLabel: "DELETE",
+                    onConfirm: {
+                        pendingDelete = nil
+                        vm.stills.removeAll { $0.id == still.id }
+                    },
+                    onCancel: { pendingDelete = nil }
+                )
+                .frame(maxWidth: 280)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
     }
 
@@ -43,11 +68,6 @@ struct StillsGalleryView: View {
                 .font(Theme.dataLabel())
                 .tracking(Theme.labelTracking)
                 .foregroundStyle(Theme.tertiary)
-            Text("tap the camera button in the FEED tab to capture")
-                .font(Theme.statusCaption())
-                .foregroundStyle(Theme.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
             Spacer()
         }
     }
@@ -58,42 +78,46 @@ struct StillsGalleryView: View {
 private struct StillCell: View {
     let still: CapturedStill
     let timeFormatter: DateFormatter
+    let onRequestDelete: () -> Void
     let onDelete: () -> Void
 
-    @State private var showDeleteAlert = false
-    @State private var showFullscreen  = false
+    @State private var showFullscreen = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            thumbnailView
-                .aspectRatio(16 / 9, contentMode: .fit)
-                .clipped()
-                .cornerRadius(4)
-                .onTapGesture { showFullscreen = true }
-                .onLongPressGesture { showDeleteAlert = true }
+            VStack(spacing: 4) {
+                thumbnailView
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .clipped()
+                    .cornerRadius(4)
+                    .onTapGesture { showFullscreen = true }
+                    .onLongPressGesture(minimumDuration: 0.4) {
+                        #if os(iOS)
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        #endif
+                        onRequestDelete()
+                    }
 
-            HStack(spacing: 4) {
-                Text(timeFormatter.string(from: still.timestamp))
-                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                Text(still.sourceLabel)
+                    .font(Theme.label(size: 9))
                     .foregroundStyle(Theme.tertiary)
-                    .lineLimit(1)
-
-                if still.bmpccFilename != nil {
-                    Text("BMPCC")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(Theme.accent)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(Theme.accent.opacity(0.12))
-                        .cornerRadius(2)
-                }
-                Spacer()
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
+
+            Text(timeFormatter.string(from: still.timestamp))
+                .font(Theme.label(size: 10))
+                .foregroundStyle(Theme.tertiary)
+                .lineLimit(1)
         }
         #if os(iOS)
         .fullScreenCover(isPresented: $showFullscreen) {
             if let data = still.piCamImageData, let img = PlatformImage(data: data) {
-                FullscreenImageView(image: img, isPresented: $showFullscreen)
+                FullscreenImageView(
+                    image: img,
+                    isPresented: $showFullscreen,
+                    sourceLabel: still.sourceLabel,
+                    onDelete: { showFullscreen = false; onDelete() }
+                )
             } else {
                 placeholderFullscreen
             }
@@ -101,16 +125,17 @@ private struct StillCell: View {
         #else
         .sheet(isPresented: $showFullscreen) {
             if let data = still.piCamImageData, let img = PlatformImage(data: data) {
-                FullscreenImageView(image: img, isPresented: $showFullscreen)
+                FullscreenImageView(
+                    image: img,
+                    isPresented: $showFullscreen,
+                    sourceLabel: still.sourceLabel,
+                    onDelete: { showFullscreen = false; onDelete() }
+                )
             } else {
                 placeholderFullscreen
             }
         }
         #endif
-        .alert("Delete this still?", isPresented: $showDeleteAlert) {
-            Button("DELETE", role: .destructive) { onDelete() }
-            Button("CANCEL", role: .cancel) { }
-        }
     }
 
     @ViewBuilder

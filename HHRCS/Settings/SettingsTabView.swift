@@ -1,21 +1,23 @@
+import MapKit
 import SwiftUI
 
 struct SettingsTabView: View {
     @EnvironmentObject var vm: DataViewModel
     @ObservedObject private var settings = AppSettings.shared
 
-    private enum DeploymentField: Hashable { case name, position, latitude, longitude }
+    private enum DeploymentField: Hashable { case name, position, address, latitude, longitude }
     @FocusState private var deploymentFocus: DeploymentField?
 
+    @StateObject private var locationSearch = LocationSearchViewModel()
     @State private var latText = ""
     @State private var lngText = ""
     @State private var isEditingAPIKey = false
+    @State private var showClearLocationSheet = false
     @State private var showAddURL      = false
     @State private var newURLDraft     = ""
 
     @State private var isRestartingHhrcs    = false
     @State private var isRestartingDetector = false
-    @State private var showLog:   Bool           = false
     @State private var activeDot: DiagnosticDot? = nil
 
     @State private var piDepActive        = false
@@ -41,19 +43,44 @@ struct SettingsTabView: View {
     @State private var confirmOwnerPW     = ""
     @State private var ownerPWChangeMsg   = ""
 
+    @State private var showRefreshInterval   = false
+    @State private var showDetectorThreshold = false
+    @State private var showChecklist         = false
+    @State private var showResetConfirm      = false
+    @AppStorage("stillRefreshInterval") private var stillRefreshInterval: Int = 5
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                diagnosticCard
-                deploymentCard
-                accessCard
-                systemCard
-                agentCard
-                notificationsCard
-                versionRow
+        VStack(spacing: 0) {
+            HStack {
+                Text("SETTINGS")
+                    .font(Theme.label(size: 11))
+                    .tracking(Theme.labelTracking)
+                    .foregroundStyle(settings.activeColor)
+                    .fontWeight(.semibold)
+                Spacer()
             }
-            .padding(Theme.pagePadding)
-            .padding(.bottom, 40)
+            .padding(.horizontal, Theme.pagePadding)
+            .frame(height: 32)
+            HRule().padding(.horizontal, Theme.pagePadding)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    diagnosticCard
+                    enclosureCard
+                    deploymentCard
+                    refreshIntervalCard
+                    detectorThresholdCard
+                    accessCard
+                    systemCard
+                    agentCard
+                    notificationsCard
+                    deploymentChecklistCard
+                    displayCard
+                    versionRow
+                }
+                .padding(Theme.pagePadding)
+                .padding(.bottom, 40)
+            }
+            .scrollIndicators(.hidden)
         }
         .background(Theme.background)
         .clipShape(BottomRoundedRectangle(radius: Theme.cardRadius))
@@ -62,6 +89,88 @@ struct SettingsTabView: View {
             lngText = String(format: "%.6f", settings.longitude)
             Task { await pollDeploymentStatus() }
         }
+    }
+
+    // MARK: – DISPLAY
+
+    private var displayCard: some View {
+        SectionCard(title: "DISPLAY") {
+            ToggleRow(label: "WARM UI", isOn: $settings.warmUI)
+        }
+    }
+
+    // MARK: – Refresh interval card
+
+    private static let refreshOptions: [(label: String, value: Int)] = [
+        ("2 SECONDS", 2), ("5 SECONDS", 5), ("10 SECONDS", 10),
+        ("30 SECONDS", 30), ("1 MINUTE", 60), ("5 MINUTES", 300), ("MANUAL ONLY", -1),
+    ]
+
+    private var refreshIntervalCard: some View {
+        let current = stillRefreshInterval == 0 ? 5 : stillRefreshInterval
+        let currentLabel = Self.refreshOptions.first { $0.value == current }?.label ?? "5 SECONDS"
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { showRefreshInterval.toggle() }
+            } label: {
+                HStack {
+                    Text("REFRESH INTERVAL")
+                        .font(Theme.dataLabel(size: 9))
+                        .tracking(Theme.headerTracking)
+                        .foregroundStyle(Theme.cardLabel)
+                    Spacer()
+                    Text(currentLabel)
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.secondary)
+                    Image(systemName: showRefreshInterval ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.tertiary)
+                        .padding(.leading, 6)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if showRefreshInterval {
+                HRule().padding(.top, 10)
+                VStack(spacing: 0) {
+                    ForEach(Self.refreshOptions, id: \.value) { opt in
+                        Button {
+                            stillRefreshInterval = opt.value
+                            NotificationCenter.default.post(name: .stillRefreshIntervalChanged, object: nil)
+                        } label: {
+                            HStack {
+                                Text(opt.label)
+                                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                                    .foregroundStyle(current == opt.value ? settings.activeColor : Theme.secondary)
+                                Spacer()
+                                if current == opt.value {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(settings.activeColor)
+                                }
+                            }
+                            .padding(.vertical, 10)
+                        }
+                        .buttonStyle(.plain)
+                        if opt.value != -1 {
+                            HRule()
+                        }
+                    }
+                }
+                .padding(.top, 2)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.cardBackground)
+        .cornerRadius(Theme.cardRadius)
+        .animation(.easeInOut(duration: 0.2), value: showRefreshInterval)
+    }
+
+    // MARK: – Deployment checklist card
+
+    private var deploymentChecklistCard: some View {
+        DeploymentChecklistCard(isExpanded: $showChecklist, showResetConfirm: $showResetConfirm)
     }
 
     // MARK: – Version row
@@ -81,38 +190,29 @@ struct SettingsTabView: View {
     private var diagnosticCard: some View {
         SectionCard(title: "DIAGNOSTIC") {
             VStack(spacing: 0) {
+                advisoryLine
+
                 HStack(spacing: 0) {
-                    diagnosticDotButton(.pi,     status: vm.healthPiReachable ? .green : .red)
-                    diagnosticDotButton(.bridge, status: vm.healthBridgeReachable ? .green : .red)
-                    diagnosticDotButton(.ble,    status: vm.healthBleConnected ? .green : .red)
-                    diagnosticDotButton(.yolo,   status: yoloStatus)
-                    diagnosticDotButton(.ssd,    status: ssdStatus)
+                    diagnosticDotButton(.pi,    status: vm.healthPiReachable ? .green : .red)
+                    diagnosticDotButton(.bmpcc, status: bmpccStatus)
+                    diagnosticDotButton(.cam,   status: camStatus)
+                    diagnosticDotButton(.yolo,  status: yoloStatus)
+                    diagnosticDotButton(.hdmi,  status: hdmiStatus)
+                    Rectangle()
+                        .fill(Theme.rule)
+                        .frame(width: 1, height: 24)
+                        .padding(.horizontal, 4)
+                    diagnosticDotButton(.piSd,  status: piSdStatus)
+                    diagnosticDotButton(.camSd, status: camSdStatus)
+                    diagnosticDotButton(.camCf, status: camCfStatus)
                 }
 
                 if let dot = activeDot {
                     HRule()
                     dotDetailPanel(dot)
-                } else if showLog {
-                    HRule()
-                    logPanelView
                 }
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        showLog.toggle()
-                        if showLog { activeDot = nil }
-                    }
-                } label: {
-                    Image(systemName: showLog ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .regular, design: .monospaced))
-                        .foregroundStyle(Theme.tertiary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                }
-                .buttonStyle(.plain)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: showLog)
         .animation(.easeInOut(duration: 0.2), value: activeDot)
     }
 
@@ -120,12 +220,7 @@ struct SettingsTabView: View {
     private func diagnosticDotButton(_ dot: DiagnosticDot, status: HealthStatus) -> some View {
         Button {
             withAnimation(.easeInOut(duration: 0.2)) {
-                if activeDot == dot {
-                    activeDot = nil
-                } else {
-                    activeDot = dot
-                    showLog = false
-                }
+                activeDot = activeDot == dot ? nil : dot
             }
         } label: {
             VStack(spacing: 5) {
@@ -148,71 +243,191 @@ struct SettingsTabView: View {
     @ViewBuilder
     private func dotDetailPanel(_ dot: DiagnosticDot) -> some View {
         switch dot {
-        case .pi:     PiDetailView().environmentObject(vm)
-        case .bridge: BridgeDetailView().environmentObject(vm)
-        case .ble:    BleDetailView().environmentObject(vm)
-        case .yolo:   YoloDetailView().environmentObject(vm)
-        case .ssd:    SsdDetailView().environmentObject(vm)
+        case .pi:    PiDetailView().environmentObject(vm)
+        case .bmpcc: BmpccDetailView().environmentObject(vm)
+        case .cam:   CamDetailView().environmentObject(vm)
+        case .yolo:  YoloDetailView().environmentObject(vm)
+        case .hdmi:  HdmiDetailView().environmentObject(vm)
+        case .piSd:  PiSdDetailView().environmentObject(vm)
+        case .camSd: CamSdDetailView().environmentObject(vm)
+        case .camCf: CamCfDetailView().environmentObject(vm)
         }
     }
 
-    private var logPanelView: some View {
-        VStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(EventLogFilter.allCases, id: \.self) { filter in
-                        Button { vm.eventLogFilter = filter } label: {
-                            Text(filter.rawValue)
-                                .font(Theme.dataLabel(size: 9))
-                                .foregroundStyle(vm.eventLogFilter == filter
-                                    ? Theme.background : Theme.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(vm.eventLogFilter == filter ? Theme.accentOrange : Color.clear)
-                                .overlay(RoundedRectangle(cornerRadius: 3)
-                                    .stroke(
-                                        vm.eventLogFilter == filter ? Theme.accentOrange : Theme.tertiary,
-                                        lineWidth: 0.5
-                                    ))
-                                .cornerRadius(3)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .padding(.top, 10)
-            .padding(.bottom, 6)
+    // MARK: – ENCLOSURE
 
-            if vm.filteredEventLog.isEmpty {
-                Text(vm.healthPiReachable ? "No events in window" : "Pi unreachable")
-                    .font(Theme.bodyMono(size: 11))
-                    .foregroundStyle(Theme.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 4)
-            } else {
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(vm.filteredEventLog) { line in
-                            DiagnosticEventRow(line: line)
-                        }
-                    }
+    private var enclosureCard: some View {
+        SectionCard(title: "ENCLOSURE") {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("UPTIME")
+                        .font(Theme.dataLabel(size: 9))
+                        .tracking(Theme.headerTracking)
+                        .foregroundStyle(Theme.secondary)
+                    Spacer()
+                    Text(uptimeFormatted)
+                        .font(Theme.bodyMono(size: 11))
+                        .foregroundStyle(Theme.text)
                 }
-                .frame(maxHeight: 170)
+                .padding(.vertical, 8)
+                HRule()
+                HStack(alignment: .top) {
+                    Text("LOG")
+                        .font(Theme.dataLabel(size: 9))
+                        .tracking(Theme.headerTracking)
+                        .foregroundStyle(Theme.secondary)
+                    Spacer()
+                    Text("data/system_metrics_\(todayUTCString).jsonl")
+                        .font(.system(size: 9, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.tertiary)
+                        .multilineTextAlignment(.trailing)
+                }
+                .padding(.vertical, 8)
             }
         }
+    }
+
+    private var uptimeFormatted: String {
+        guard let secs = vm.uptimeSeconds else { return "—" }
+        let h = secs / 3600
+        let m = (secs % 3600) / 60
+        if h > 0 { return "\(h)h \(m)m" }
+        return "\(m)m"
+    }
+
+    private var todayUTCString: String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f.string(from: Date())
+    }
+
+    private var bmpccStatus: HealthStatus {
+        guard vm.healthPiReachable else { return .grey }
+        return vm.camReachable ? .green : .red
+    }
+
+    private var camStatus: HealthStatus {
+        return vm.healthPiReachable ? .green : .grey
     }
 
     private var yoloStatus: HealthStatus {
         guard vm.healthPiReachable else { return .grey }
-        if !vm.healthYoloRunning { return .red }
-        return vm.healthYoloSimMode ? .yellow : .green
+        return vm.healthYoloRunning ? .green : .red
     }
 
-    private var ssdStatus: HealthStatus {
-        guard vm.healthSsdMounted else { return .red }
-        if vm.healthSsdFreePct < 5  { return .red }
-        if vm.healthSsdFreePct < 10 { return .yellow }
+    private var hdmiStatus: HealthStatus {
+        guard vm.healthPiReachable else { return .grey }
+        return vm.hdmiReachable ? .green : .red
+    }
+
+    private var piSdStatus: HealthStatus {
+        guard vm.healthPiReachable else { return .grey }
+        guard let used = vm.piSdUsedPct else { return .grey }
+        if used > 95 { return .red }
+        if used > 80 { return .yellow }
         return .green
+    }
+
+    private var camSdStatus: HealthStatus {
+        guard vm.camReachable else { return .grey }
+        return vm.camActiveMediaSlot.lowercased().contains("sd") ? .green : .grey
+    }
+
+    private var camCfStatus: HealthStatus {
+        guard vm.camReachable else { return .grey }
+        let slot = vm.camActiveMediaSlot.lowercased()
+        return (slot.contains("cfast") || slot.contains("cf")) ? .green : .grey
+    }
+
+    @ViewBuilder
+    private var advisoryLine: some View {
+        if !vm.healthPiReachable {
+            Text("PI UNREACHABLE — CHECK NETWORK")
+                .font(.system(size: 8, weight: .regular, design: .monospaced))
+                .tracking(1.2)
+                .foregroundStyle(Theme.dotRed)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+        } else if !vm.hdmiReachable {
+            Text("HDMI OFFLINE — CHECK CAPTURE CARD")
+                .font(.system(size: 8, weight: .regular, design: .monospaced))
+                .tracking(1.2)
+                .foregroundStyle(Theme.text2)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+        }
+    }
+
+    // MARK: – Detector threshold card
+
+    private var detectorThresholdCard: some View {
+        let threshold = vm.detectorThreshold
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { showDetectorThreshold.toggle() }
+            } label: {
+                HStack {
+                    Text("DETECTOR THRESHOLD")
+                        .font(Theme.dataLabel(size: 9))
+                        .tracking(Theme.headerTracking)
+                        .foregroundStyle(Theme.cardLabel)
+                    Spacer()
+                    Text(String(format: "%.2f", threshold))
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.secondary)
+                    Image(systemName: showDetectorThreshold ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.tertiary)
+                        .padding(.leading, 6)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if showDetectorThreshold {
+                HRule().padding(.top, 10)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(String(format: "%.2f", threshold))
+                        .font(.system(size: 13, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.text)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 4)
+                    Slider(
+                        value: Binding(
+                            get: { vm.detectorThreshold },
+                            set: { vm.detectorThreshold = $0 }
+                        ),
+                        in: 0.0...1.0,
+                        step: 0.05
+                    ) { editing in
+                        if !editing {
+                            Task { await vm.setDetectorThreshold(vm.detectorThreshold) }
+                        }
+                    }
+                    .tint(Theme.text1)
+                    HStack {
+                        Text("0.5 PERMISSIVE")
+                        Spacer()
+                        Text("0.7 DEFAULT")
+                        Spacer()
+                        Text("0.9 CONSERVATIVE")
+                    }
+                    .font(.system(size: 7, weight: .regular, design: .monospaced))
+                    .foregroundStyle(Theme.tertiary)
+                    Text("Lower = more triggers.  Higher = fewer false positives.")
+                        .font(.system(size: 9, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 2)
+                }
+                .padding(.top, 6)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.cardBackground)
+        .cornerRadius(Theme.cardRadius)
+        .animation(.easeInOut(duration: 0.2), value: showDetectorThreshold)
     }
 
     // MARK: – DEPLOYMENT
@@ -224,7 +439,7 @@ struct SettingsTabView: View {
                     TextField("Hunter House", text: $settings.deploymentName)
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .foregroundColor(.white)
-                        .tint(Theme.accentOrange)
+                        .tint(Theme.text1)
                         .submitLabel(.next)
                         .focused($deploymentFocus, equals: .name)
                 }
@@ -233,39 +448,60 @@ struct SettingsTabView: View {
                     TextField("e.g. North Meadow facing NE", text: $settings.positionName)
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .foregroundColor(.white)
-                        .tint(Theme.accentOrange)
+                        .tint(Theme.text1)
                         .submitLabel(.next)
                         .focused($deploymentFocus, equals: .position)
                 }
+
+                deploymentField(label: "LOCATION") {
+                    TextField("Search address...", text: $locationSearch.query)
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundColor(.white)
+                        .tint(Theme.text1)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .focused($deploymentFocus, equals: .address)
+                        .onChange(of: locationSearch.query) { _, newVal in
+                            if newVal.isEmpty
+                                && !settings.deploymentAddress.isEmpty
+                                && deploymentFocus == .address
+                                && !locationSearch.suppressNextClearConfirmation {
+                                showClearLocationSheet = true
+                            }
+                        }
+                }
+
+                locationDropdown
 
                 deploymentField(label: "LATITUDE") {
                     TextField("48.515000", text: $latText)
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .foregroundColor(deploymentFocus == .latitude ? .white : Color(Theme.secondary))
-                        .tint(Theme.accentOrange)
+                        .tint(Theme.text1)
                         .keyboardType(.numbersAndPunctuation)
                         .submitLabel(.next)
                         .focused($deploymentFocus, equals: .latitude)
                         .onSubmit { commitCoords() }
-                        .onChange(of: latText) { _, _ in commitCoords() }
+                        .onChange(of: latText) { _, _ in
+                            commitCoords()
+                            if deploymentFocus == .latitude { settings.deploymentAddress = "" }
+                        }
                 }
 
                 deploymentField(label: "LONGITUDE") {
                     TextField("-123.408000", text: $lngText)
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .foregroundColor(deploymentFocus == .longitude ? .white : Color(Theme.secondary))
-                        .tint(Theme.accentOrange)
+                        .tint(Theme.text1)
                         .keyboardType(.numbersAndPunctuation)
                         .submitLabel(.next)
                         .focused($deploymentFocus, equals: .longitude)
                         .onSubmit { commitCoords() }
-                        .onChange(of: lngText) { _, _ in commitCoords() }
+                        .onChange(of: lngText) { _, _ in
+                            commitCoords()
+                            if deploymentFocus == .longitude { settings.deploymentAddress = "" }
+                        }
                 }
-
-                Text("Prospect Lake, Saanich  ·  \(String(format: "%.4f", settings.latitude)), \(String(format: "%.4f", settings.longitude))")
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .foregroundStyle(.white)
-                    .padding(.vertical, 8)
 
                 HRule()
 
@@ -283,9 +519,9 @@ struct SettingsTabView: View {
                         } label: {
                             HStack(spacing: 10) {
                                 Circle()
-                                    .fill(settings.piServerURL == url ? Theme.accentOrange : Color.clear)
+                                    .fill(settings.piServerURL == url ? settings.activeColor : Color.clear)
                                     .overlay(Circle().stroke(
-                                        settings.piServerURL == url ? Theme.accentOrange : Theme.tertiary,
+                                        settings.piServerURL == url ? settings.activeColor : Theme.tertiary,
                                         lineWidth: 1))
                                     .frame(width: 6, height: 6)
                                 Text(url)
@@ -306,7 +542,7 @@ struct SettingsTabView: View {
                             TextField("http://", text: $newURLDraft)
                                 .font(.system(size: 11, weight: .regular, design: .monospaced))
                                 .foregroundColor(.white)
-                                .tint(Theme.accentOrange)
+                                .tint(Theme.text1)
                                 .keyboardType(.URL)
                                 .autocapitalization(.none)
                                 .disableAutocorrection(true)
@@ -315,7 +551,7 @@ struct SettingsTabView: View {
                             Button("SAVE") { saveNewURL() }
                                 .font(Theme.dataLabel(size: 9))
                                 .tracking(Theme.labelTracking)
-                                .foregroundStyle(Theme.accentOrange)
+                                .foregroundStyle(settings.activeColor)
                                 .buttonStyle(.plain)
                             Button("CANCEL") { newURLDraft = ""; showAddURL = false }
                                 .font(Theme.dataLabel(size: 9))
@@ -329,7 +565,7 @@ struct SettingsTabView: View {
                         Button("+ ADD") { showAddURL = true }
                             .font(Theme.dataLabel(size: 9))
                             .tracking(Theme.labelTracking)
-                            .foregroundStyle(Theme.accentOrange)
+                            .foregroundStyle(settings.activeColor)
                             .buttonStyle(.plain)
                             .padding(.vertical, 7)
                         HRule()
@@ -359,6 +595,72 @@ struct SettingsTabView: View {
             }
             .presentationDragIndicator(.visible)
         }
+        .overlay {
+            if showClearLocationSheet {
+                ConfirmationCard(
+                    title:        "CLEAR LOCATION?",
+                    message:      "Lat/long will also be cleared.",
+                    confirmLabel: "CLEAR",
+                    onConfirm: {
+                        showClearLocationSheet = false
+                        settings.deploymentAddress = ""
+                        latText = ""
+                        lngText = ""
+                        settings.latitude  = 0
+                        settings.longitude = 0
+                    },
+                    onCancel: { showClearLocationSheet = false }
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var locationDropdown: some View {
+        if !locationSearch.results.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(Array(locationSearch.results.enumerated()), id: \.offset) { i, result in
+                    Button {
+                        Task { await selectLocation(result) }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(result.title)
+                                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                                .foregroundStyle(Theme.text)
+                                .lineLimit(1)
+                            if !result.subtitle.isEmpty {
+                                Text(result.subtitle)
+                                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                                    .foregroundStyle(Theme.tertiary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    if i < locationSearch.results.count - 1 { HRule() }
+                }
+            }
+            .padding(.bottom, 10)
+        } else if !locationSearch.query.trimmingCharacters(in: .whitespaces).isEmpty
+                    && !locationSearch.isSearching {
+            Text("NO MATCHES")
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(Theme.tertiary)
+                .padding(.vertical, 4)
+                .padding(.bottom, 6)
+        }
+    }
+
+    private func selectLocation(_ completion: MKLocalSearchCompletion) async {
+        guard let coords = await locationSearch.select(completion) else { return }
+        settings.latitude          = coords.lat
+        settings.longitude         = coords.lon
+        settings.deploymentAddress = coords.address
+        latText = String(format: "%.6f", coords.lat)
+        lngText = String(format: "%.6f", coords.lon)
+        locationSearch.setDisplayAddress(coords.address)
     }
 
     @ViewBuilder
@@ -370,14 +672,14 @@ struct SettingsTabView: View {
                 Button("NEW DEPLOYMENT") { showNewDepSheet = true }
                     .font(Theme.dataLabel(size: 9))
                     .tracking(Theme.labelTracking)
-                    .foregroundStyle(Theme.accentOrange)
+                    .foregroundStyle(settings.activeColor)
                     .buttonStyle(.plain)
                 Spacer()
                 if piDepActive {
                     Button("CLOSE") { showCloseDepSheet = true }
                         .font(Theme.dataLabel(size: 9))
                         .tracking(Theme.labelTracking)
-                        .foregroundStyle(Theme.accentOrange)
+                        .foregroundStyle(settings.activeColor)
                         .buttonStyle(.plain)
                 }
             }
@@ -407,7 +709,7 @@ struct SettingsTabView: View {
                     Text(settings.ownerModeEnabled ? "Active" : "Locked")
                         .font(Theme.dataLabel(size: 11))
                         .tracking(Theme.labelTracking)
-                        .foregroundStyle(settings.ownerModeEnabled ? Theme.accentOrange : Theme.tertiary)
+                        .foregroundStyle(settings.ownerModeEnabled ? settings.activeColor : Theme.tertiary)
                     Spacer()
                     if settings.ownerModeEnabled {
                         Button("LOCK") { settings.lockOwnerMode() }
@@ -419,7 +721,7 @@ struct SettingsTabView: View {
                         Button("UNLOCK") { showOwnerUnlock = true }
                             .font(Theme.dataLabel(size: 9))
                             .tracking(Theme.labelTracking)
-                            .foregroundStyle(Theme.accentOrange)
+                            .foregroundStyle(settings.activeColor)
                             .buttonStyle(.plain)
                     }
                 }
@@ -452,17 +754,17 @@ struct SettingsTabView: View {
                                 Text(ownerPWChangeMsg)
                                     .font(.system(size: 11, weight: .regular, design: .monospaced))
                                     .foregroundStyle(ownerPWChangeMsg == "Password updated"
-                                        ? Theme.accentOrange : Theme.tertiary)
+                                        ? settings.activeColor : Theme.tertiary)
                             }
                             Button(action: commitOwnerPWChange) {
                                 Text("UPDATE")
                                     .font(Theme.dataLabel())
                                     .tracking(Theme.labelTracking)
-                                    .foregroundStyle(Theme.accentOrange)
+                                    .foregroundStyle(settings.activeColor)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 10)
                                     .overlay(RoundedRectangle(cornerRadius: 3)
-                                        .stroke(Theme.accentOrange.opacity(0.4), lineWidth: 0.5))
+                                        .stroke(settings.activeColor.opacity(0.4), lineWidth: 0.5))
                             }
                             .buttonStyle(.plain)
                         }
@@ -482,31 +784,23 @@ struct SettingsTabView: View {
     private var systemCard: some View {
         SectionCard(title: "SYSTEM") {
             VStack(spacing: 0) {
-                ToggleRow(label: "SIMULATION MODE",     isOn: $settings.simulationMode)
-                HRule()
-                ToggleRow(label: "DAWN / DUSK WINDOWS", isOn: $settings.dawnDuskWindows)
-                HRule()
-                ToggleRow(label: "DETECTION TRIGGER",   isOn: $settings.detectionTrigger)
-                HRule()
-                ToggleRow(label: "PUSH NOTIFICATIONS",  isOn: $settings.pushNotificationsEnabled, onChange: { enabled in
-                    if enabled {
-                        NotificationManager.shared.requestPermission()
-                        if settings.simulationMode {
-                            NotificationManager.shared.scheduleSimulatedDetection(
-                                deploymentName: settings.deploymentName,
-                                positionName: settings.positionName
-                            )
+                HStack(alignment: .center) {
+                    Circle()
+                        .fill(settings.dawnDuskWindows ? settings.activeColor : Theme.tertiary)
+                        .frame(width: 6, height: 6)
+                    Text("DAWN / DUSK WINDOWS")
+                        .font(Theme.dataLabel(size: 9))
+                        .tracking(Theme.labelTracking)
+                        .foregroundStyle(Theme.secondary)
+                    Spacer()
+                    Toggle("", isOn: $settings.dawnDuskWindows)
+                        .labelsHidden()
+                        .toggleStyle(NeutralToggleStyle(activeColor: settings.activeColor))
+                        .onChange(of: settings.dawnDuskWindows) { _, newValue in
+                            Task { await postDawnDusk(enabled: newValue) }
                         }
-                    }
-                })
-                HRule()
-                ToggleRow(label: "30-MIN STILLS",       isOn: $settings.thirtyMinStills)
-                HRule()
-                ToggleRow(
-                    label:    "PI AGENT LOG",
-                    subtitle: "Show autonomous observations in Log",
-                    isOn:     $settings.piAgentLogEnabled
-                )
+                }
+                .padding(.vertical, 8)
             }
         }
     }
@@ -546,16 +840,47 @@ struct SettingsTabView: View {
         isRestartingDetector = false
     }
 
+    private func postDawnDusk(enabled: Bool) async {
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty, let url = URL(string: base + "/settings/dawn_dusk") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["enabled": enabled])
+        req.timeoutInterval = 5
+        _ = try? await URLSession.shared.data(for: req)
+    }
+
     // MARK: – NOTIFICATIONS
 
     private var notificationsCard: some View {
         SectionCard(title: "NOTIFICATIONS") {
             VStack(spacing: 0) {
-                ToggleRow(label: "RECORDING & STILLS", isOn: $settings.notifyRecording)
-                HRule()
-                ToggleRow(label: "ANIMAL DETECTIONS",  isOn: $settings.notifyDetections)
-                HRule()
-                ToggleRow(label: "DEPLOYMENTS",        isOn: $settings.notifyDeployments)
+                ToggleRow(label: "PUSH NOTIFICATIONS", isOn: $settings.pushNotificationsEnabled, onChange: { enabled in
+                    if enabled { NotificationManager.shared.requestPermission() }
+                })
+                if settings.pushNotificationsEnabled {
+                    HRule()
+                    VStack(spacing: 0) {
+                        ToggleRow(label: "RECORDINGS", isOn: $settings.notifyRecordings)
+                            .padding(.leading, 16)
+                        HRule()
+                        ToggleRow(label: "STILLS", isOn: $settings.notifyStills)
+                            .padding(.leading, 16)
+                        HRule()
+                        ToggleRow(label: "ANIMAL DETECTIONS",  isOn: $settings.notifyDetections)
+                            .padding(.leading, 16)
+                        HRule()
+                        ToggleRow(label: "DEPLOYMENTS",        isOn: $settings.notifyDeployments)
+                            .padding(.leading, 16)
+                        HRule()
+                        ToggleRow(label: "SYSTEM ALERTS",      isOn: $settings.notifySystemAlerts)
+                            .padding(.leading, 16)
+                        HRule()
+                        ToggleRow(label: "AGENT ACTIVITY",     isOn: $settings.notifyAgentActivity)
+                            .padding(.leading, 16)
+                    }
+                }
             }
         }
     }
@@ -574,7 +899,7 @@ struct SettingsTabView: View {
                         TextField("sk-ant-...", text: $settings.anthropicAPIKey)
                             .font(Theme.dataValueText(size: 14))
                             .foregroundColor(.white)
-                            .tint(Theme.accentOrange)
+                            .tint(Theme.text1)
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
                             .submitLabel(.done)
@@ -590,7 +915,7 @@ struct SettingsTabView: View {
                     Button(isEditingAPIKey ? "DONE" : "EDIT") { isEditingAPIKey.toggle() }
                         .font(Theme.dataLabel(size: 9))
                         .tracking(Theme.labelTracking)
-                        .foregroundStyle(Theme.accentOrange)
+                        .foregroundStyle(settings.activeColor)
                         .buttonStyle(.plain)
                 }
                 HRule()
@@ -672,6 +997,7 @@ private struct NewDeploymentSheet: View {
     @Binding var isPresented: Bool
     let onCreated: () -> Void
 
+    @ObservedObject private var settings = AppSettings.shared
     @State private var name     = ""
     @State private var position = ""
     @State private var lat      = ""
@@ -708,41 +1034,42 @@ private struct NewDeploymentSheet: View {
                         newDepField(label: "SITE") {
                             TextField("Hunter House", text: $name)
                                 .font(.system(size: 11, weight: .regular, design: .monospaced))
-                                .foregroundColor(.white).tint(Theme.accentOrange)
+                                .foregroundColor(.white).tint(Theme.text1)
                         }
                         newDepField(label: "POSITION") {
                             TextField("e.g. North Meadow facing NE", text: $position)
                                 .font(.system(size: 11, weight: .regular, design: .monospaced))
-                                .foregroundColor(.white).tint(Theme.accentOrange)
+                                .foregroundColor(.white).tint(Theme.text1)
                         }
                         newDepField(label: "LATITUDE") {
                             TextField("48.515000", text: $lat)
                                 .font(.system(size: 11, weight: .regular, design: .monospaced))
-                                .foregroundColor(.white).tint(Theme.accentOrange)
+                                .foregroundColor(.white).tint(Theme.text1)
                                 .keyboardType(.numbersAndPunctuation)
                         }
                         newDepField(label: "LONGITUDE") {
                             TextField("-123.408000", text: $lng)
                                 .font(.system(size: 11, weight: .regular, design: .monospaced))
-                                .foregroundColor(.white).tint(Theme.accentOrange)
+                                .foregroundColor(.white).tint(Theme.text1)
                                 .keyboardType(.numbersAndPunctuation)
                         }
                         newDepField(label: "BEARING") {
                             TextField("e.g. 045 (optional)", text: $bearing)
                                 .font(.system(size: 11, weight: .regular, design: .monospaced))
-                                .foregroundColor(.white).tint(Theme.accentOrange)
+                                .foregroundColor(.white).tint(Theme.text1)
                                 .keyboardType(.numbersAndPunctuation)
                         }
                         newDepField(label: "NOTES") {
                             TextField("Optional notes", text: $notes, axis: .vertical)
                                 .font(.system(size: 11, weight: .regular, design: .monospaced))
-                                .foregroundColor(.white).tint(Theme.accentOrange)
+                                .foregroundColor(.white).tint(Theme.text1)
                                 .lineLimit(1...3)
                         }
                     }
                     .padding(.horizontal, Theme.pagePadding)
                     .padding(.top, 8)
                 }
+                .scrollIndicators(.hidden)
 
                 if !errorMsg.isEmpty {
                     Text(errorMsg)
@@ -758,7 +1085,7 @@ private struct NewDeploymentSheet: View {
                     Text(isPosting ? "Creating…" : "CREATE DEPLOYMENT")
                         .font(.system(size: 9, weight: .regular, design: .monospaced))
                         .tracking(2.5)
-                        .foregroundStyle(canSubmit ? Theme.accentOrange : Theme.tertiary)
+                        .foregroundStyle(canSubmit ? settings.activeColor : Theme.tertiary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                 }
@@ -833,6 +1160,7 @@ private struct ToggleRow: View {
     var subtitle: String? = nil
     @Binding var isOn: Bool
     var onChange: ((Bool) -> Void)? = nil
+    @ObservedObject private var settings = AppSettings.shared
 
     var body: some View {
         HStack(alignment: .center) {
@@ -850,9 +1178,7 @@ private struct ToggleRow: View {
             Spacer()
             Toggle("", isOn: $isOn)
                 .labelsHidden()
-                .tint(Theme.accentOrange)
-                .scaleEffect(0.75)
-                .frame(width: 38, height: 24)
+                .toggleStyle(NeutralToggleStyle(activeColor: settings.activeColor))
                 .onChange(of: isOn) { _, v in onChange?(v) }
         }
         .padding(.vertical, 8)
@@ -862,7 +1188,7 @@ private struct ToggleRow: View {
 // MARK: – Owner unlock sheet (numpad)
 
 private struct OwnerUnlockSheet: View {
-    @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var settings = AppSettings.shared  // needed for activeColor
     @Binding var isPresented: Bool
 
     @State private var pinEntry = ""
@@ -882,7 +1208,7 @@ private struct OwnerUnlockSheet: View {
                 HStack(spacing: 18) {
                     ForEach(0..<4, id: \.self) { i in
                         Circle()
-                            .fill(i < pinEntry.count ? Theme.accentOrange : Theme.rule)
+                            .fill(i < pinEntry.count ? settings.activeColor : Theme.rule)
                             .frame(width: 10, height: 10)
                     }
                 }
@@ -959,10 +1285,184 @@ private struct OwnerUnlockSheet: View {
     }
 }
 
+// MARK: – Deployment checklist
+
+private struct DeploymentChecklistCard: View {
+    @EnvironmentObject var vm: DataViewModel
+    @ObservedObject private var settings = AppSettings.shared
+    @Binding var isExpanded:    Bool
+    @Binding var showResetConfirm: Bool
+
+    private struct CheckItem {
+        let id:        String
+        let label:     String
+        var autoCheck: ((DataViewModel) -> Bool)? = nil
+    }
+
+    private let bmpccItems: [CheckItem] = [
+        CheckItem(id: "status_text",   label: "Status Text → ON"),
+        CheckItem(id: "lut",           label: "Display 3D LUT → preference"),
+        CheckItem(id: "bt_off",        label: "Bluetooth Control → OFF"),
+        CheckItem(id: "codec",         label: "Codec set (ProRes / BRAW)"),
+        CheckItem(id: "resolution",    label: "Resolution set"),
+        CheckItem(id: "frame_rate",    label: "Frame rate set"),
+        CheckItem(id: "iso_wb",        label: "ISO and white balance dialed"),
+    ]
+
+    private let physicalItems: [CheckItem] = [
+        CheckItem(id: "battery",       label: "BMPCC battery installed and charged"),
+        CheckItem(id: "ssd",           label: "SSD installed and tested"),
+        CheckItem(id: "lens",          label: "Lens mounted and focused"),
+        CheckItem(id: "mount",         label: "Camera mounted and angle set"),
+        CheckItem(id: "pi_enclosure",  label: "Pi enclosure secured"),
+        CheckItem(id: "pi_power",      label: "Pi power connected (USB-C)"),
+        CheckItem(id: "ethernet",      label: "Ethernet between Pi and BMPCC"),
+        CheckItem(id: "hdmi",          label: "HDMI between BMPCC and Pi capture card"),
+    ]
+
+    private let healthItems: [CheckItem] = [
+        CheckItem(id: "pi_green",      label: "Pi reachable (PI dot green)",        autoCheck: { $0.healthPiReachable }),
+        CheckItem(id: "cam_green",     label: "Camera reachable (CAM dot green)",   autoCheck: { $0.camReachable }),
+        CheckItem(id: "hdmi_green",    label: "HDMI reachable (HDMI dot green)",    autoCheck: { $0.hdmiReachable }),
+        CheckItem(id: "yolo_green",    label: "YOLO running (YOLO dot green)",      autoCheck: { $0.healthYoloRunning }),
+        CheckItem(id: "ssd_days",      label: "SSD has >2 days remaining",          autoCheck: { ($0.storageDaysRemaining ?? 0) > 2 }),
+        CheckItem(id: "test_rec",      label: "Test recording: 5s clip, confirm file on SSD"),
+        CheckItem(id: "ntfy",          label: "ntfy push received on phone"),
+        CheckItem(id: "sim_mode",      label: "Sim mode toggle set as intended"),
+    ]
+
+    private func key(_ section: String, _ id: String) -> String { "deploy_check_\(section)_\(id)" }
+
+    private func checked(_ section: String, _ id: String) -> Bool {
+        UserDefaults.standard.bool(forKey: key(section, id))
+    }
+
+    private func toggle(_ section: String, _ id: String) {
+        let k = key(section, id)
+        UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: k), forKey: k)
+    }
+
+    private func resetAll() {
+        for item in bmpccItems    { UserDefaults.standard.removeObject(forKey: key("bmpcc",    item.id)) }
+        for item in physicalItems { UserDefaults.standard.removeObject(forKey: key("physical", item.id)) }
+        for item in healthItems   { UserDefaults.standard.removeObject(forKey: key("health",   item.id)) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+            } label: {
+                HStack {
+                    Text("DEPLOYMENT CHECKLIST")
+                        .font(Theme.dataLabel(size: 9))
+                        .tracking(Theme.headerTracking)
+                        .foregroundStyle(Theme.cardLabel)
+                    Spacer()
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                HRule().padding(.top, 10)
+                checkSection(title: "BMPCC MENU",   section: "bmpcc",    items: bmpccItems)
+                HRule()
+                checkSection(title: "PHYSICAL",     section: "physical", items: physicalItems)
+                HRule()
+                checkSection(title: "SYSTEM HEALTH",section: "health",   items: healthItems)
+                HRule().padding(.top, 4)
+                Button {
+                    showResetConfirm = true
+                } label: {
+                    Text("RESET CHECKLIST")
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Theme.dotRed)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.plain)
+                .overlay {
+                    if showResetConfirm {
+                        ConfirmationCard(
+                            title:        "RESET ALL CHECKBOXES?",
+                            message:      "This cannot be undone.",
+                            confirmLabel: "RESET",
+                            onConfirm:    { showResetConfirm = false; resetAll() },
+                            onCancel:     { showResetConfirm = false }
+                        )
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.cardBackground)
+        .cornerRadius(Theme.cardRadius)
+        .animation(.easeInOut(duration: 0.2), value: isExpanded)
+    }
+
+    @ViewBuilder
+    private func checkSection(title: String, section: String, items: [CheckItem]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.system(size: 8, weight: .regular, design: .monospaced))
+                .tracking(1.8)
+                .foregroundStyle(Theme.tertiary)
+                .padding(.vertical, 8)
+            ForEach(items, id: \.id) { item in
+                checkRow(item: item, section: section)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func checkRow(item: CheckItem, section: String) -> some View {
+        let isChecked = checked(section, item.id)
+        let isAutoOK  = item.autoCheck?(vm) == true
+        Button {
+            toggle(section, item.id)
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                ZStack {
+                    if isChecked {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(settings.activeColor)
+                            .frame(width: 14, height: 14)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Theme.background)
+                    } else {
+                        RoundedRectangle(cornerRadius: 2)
+                            .stroke(isAutoOK ? settings.activeColor : Theme.tertiary, lineWidth: 1)
+                            .frame(width: 14, height: 14)
+                        if isAutoOK {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(settings.activeColor.opacity(0.15))
+                                .frame(width: 14, height: 14)
+                        }
+                    }
+                }
+                .padding(.top, 1)
+                Text(item.label)
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(isChecked ? Theme.secondary : Theme.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+            }
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: – Diagnostic event log row
 
 private struct DiagnosticEventRow: View {
     let line: EventLogLine
+    @ObservedObject private var settings = AppSettings.shared
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -985,7 +1485,7 @@ private struct DiagnosticEventRow: View {
 
     private var labelColor: Color {
         switch line.label {
-        case "TRIGGER", "REC": return Theme.accentOrange
+        case "TRIGGER", "REC": return settings.activeColor
         case "ERROR":          return Theme.tertiary
         default:               return Theme.secondary
         }
@@ -1008,7 +1508,7 @@ private struct PINField: View {
             SecureField("••••", text: $text)
                 .font(Theme.dataValue(size: 17))
                 .foregroundColor(.white)
-                .tint(Theme.accentOrange)
+                .tint(Theme.text1)
                 .keyboardType(.numberPad)
         }
     }
@@ -1051,6 +1551,7 @@ private struct CloseDeploymentSheet: View {
     let deploymentName: String
     let onConfirm: (String) -> Void
 
+    @ObservedObject private var settings = AppSettings.shared
     @State private var notes = ""
     @FocusState private var notesFocused: Bool
 
@@ -1091,14 +1592,14 @@ private struct CloseDeploymentSheet: View {
                     TextField("Optional closing notes", text: $notes, axis: .vertical)
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .foregroundStyle(.white)
-                        .tint(Theme.accentOrange)
+                        .tint(Theme.text1)
                         .lineLimit(1...4)
                         .focused($notesFocused)
                         .padding(10)
                         .background(Theme.background)
                         .overlay(
                             RoundedRectangle(cornerRadius: 4)
-                                .stroke(Theme.accentOrange, lineWidth: 1)
+                                .stroke(Theme.rule, lineWidth: 1)
                         )
                 }
                 .padding(.horizontal, Theme.pagePadding)
@@ -1115,7 +1616,7 @@ private struct CloseDeploymentSheet: View {
                     Text("CONFIRM CLOSE")
                         .font(.system(size: 9, weight: .regular, design: .monospaced))
                         .tracking(2.5)
-                        .foregroundStyle(Theme.accentOrange)
+                        .foregroundStyle(settings.activeColor)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                 }

@@ -18,6 +18,9 @@ import sensors as _sensors
 
 log = logging.getLogger(__name__)
 
+def _fmt(v, suffix=""):
+    return f"{v}{suffix}" if v is not None else "--"
+
 # Injected by api_server.py after constructing these objects
 _detector = None
 _sm       = None
@@ -28,6 +31,27 @@ _HHRCS_DIR      = os.path.dirname(os.path.abspath(__file__))
 _AGENT_LOG_PATH = os.path.join(_DATA_DIR, "agent_log.json")
 _LOG_LOCK       = threading.Lock()
 _MAX_ENTRIES    = 200
+
+_CONTEXT_MD_PATH  = os.path.join(_HHRCS_DIR, "CONTEXT.md")
+_context_md_text  = ""
+_context_md_mtime = 0.0
+
+
+def _load_context_md() -> str:
+    global _context_md_text, _context_md_mtime
+    try:
+        mtime = os.path.getmtime(_CONTEXT_MD_PATH)
+        if mtime != _context_md_mtime:
+            with open(_CONTEXT_MD_PATH, encoding="utf-8") as f:
+                _context_md_text = f.read()
+            _context_md_mtime = mtime
+            log.info(f"CONTEXT.md loaded ({len(_context_md_text)} chars)")
+    except Exception as e:
+        log.warning(f"Could not read CONTEXT.md: {e}")
+    return _context_md_text
+
+
+_load_context_md()
 
 
 def init(detector, sm, camera):
@@ -120,8 +144,7 @@ def build_summary() -> dict:
 
     state_str  = _sm.state.value       if _sm       else "UNKNOWN"
     sim_mode   = not _detector._using_real if _detector else True
-    bridge_ok  = _camera.bridge_reachable  if _camera  else False
-    ble_state  = _camera.ble_state         if _camera  else "Unknown"
+    cam_ok     = _camera.connected          if _camera  else False
     cpu_temp   = _cpu_temp()
     in_window  = _in_recording_window()
 
@@ -190,8 +213,7 @@ def build_summary() -> dict:
         "sim_mode":                  sim_mode,
         "in_window":                 in_window,
         "cpu_temp_c":                cpu_temp,
-        "bridge_reachable":          bridge_ok,
-        "ble_state":                 ble_state,
+        "cam_reachable":             cam_ok,
         "anomalies":                 anomalies,
         "summary_line":              " ".join(parts),
         # sensor / environment
@@ -226,12 +248,12 @@ def query_agent(question: str) -> dict:
     except Exception as e:
         log.error(f"build_summary failed in query_agent: {e}")
         summary = {
-            "state": "UNKNOWN", "sim_mode": True, "ble_state": "Unknown",
+            "state": "UNKNOWN", "sim_mode": True,
             "detections_1h": 0, "anomalies": [], "summary_line": "Summary unavailable.",
             "detections_24h": 0, "last_detection": None,
             "last_detection_confidence": None, "ble_stable": True,
             "ble_drops_1h": 0, "in_window": False,
-            "cpu_temp_c": None, "bridge_reachable": False,
+            "cpu_temp_c": None, "cam_reachable": False,
         }
 
     dep_id        = None
@@ -263,7 +285,11 @@ def query_agent(question: str) -> dict:
     except Exception:
         pass
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    try:
+        from config import config as _cfg
+        api_key = (os.environ.get("ANTHROPIC_API_KEY", "") or _cfg.agent_api_key).strip()
+    except Exception:
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     response_text = None
     entry_type    = "query"
 
@@ -284,8 +310,8 @@ def query_agent(question: str) -> dict:
             ]
 
             s = summary
-            hw_lux_label = "hardware" if s.get("hardware_lux") else "simulated"
-            hw_env_label = "hardware" if s.get("hardware_env") else "simulated"
+            hw_lux_label = "hardware" if s.get("hardware_lux") else "absent"
+            hw_env_label = "hardware" if s.get("hardware_env") else "absent"
             context_block = (
                 f"SYSTEM STATE\n"
                 f"state: {s['state']}\n"
@@ -295,19 +321,18 @@ def query_agent(question: str) -> dict:
                 f"detections_24h: {s['detections_24h']}\n"
                 f"last_detection: {s['last_detection'] or 'None'}\n"
                 f"last_detection_confidence: {s['last_detection_confidence'] or 'None'}\n"
-                f"ble_state: {s['ble_state']}\n"
+                f"cam_reachable: {s['cam_reachable']}\n"
                 f"ble_stable: {s['ble_stable']}\n"
                 f"ble_drops_1h: {s['ble_drops_1h']}\n"
-                f"bridge_reachable: {s['bridge_reachable']}\n"
                 f"cpu_temp_c: {s['cpu_temp_c']}\n"
                 f"\nENVIRONMENT ({hw_env_label} sensor)\n"
-                f"temperature_c: {s.get('temperature_c')}\n"
-                f"humidity_pct: {s.get('humidity_pct')}\n"
-                f"dew_point_c: {s.get('dew_point_c')}\n"
-                f"pressure_hpa: {s.get('pressure_hpa')}\n"
+                f"temperature_c: {_fmt(s.get('temperature_c'), '°C')}\n"
+                f"humidity_pct: {_fmt(s.get('humidity_pct'), '%')}\n"
+                f"dew_point_c: {_fmt(s.get('dew_point_c'), '°C')}\n"
+                f"pressure_hpa: {_fmt(s.get('pressure_hpa'), ' hPa')}\n"
                 f"\nLIGHT ({hw_lux_label} sensor)\n"
-                f"lux: {s.get('lux')}\n"
-                f"ev: {s.get('ev')}\n"
+                f"lux: {_fmt(s.get('lux'))}\n"
+                f"ev: {_fmt(s.get('ev'))}\n"
                 f"\nCAMERA & STORAGE\n"
                 f"iso: {s.get('iso')}\n"
                 f"nd_filter: {s.get('nd_filter')}\n"
@@ -322,11 +347,17 @@ def query_agent(question: str) -> dict:
                 f"\nQuery: {question}"
             )
 
+            context_md = _load_context_md()
+            context_prefix = (
+                f"PROJECT CONTEXT (CONTEXT.md):\n{context_md}\n\n---\n\n"
+                if context_md else ""
+            )
             client  = anthropic.Anthropic(api_key=api_key)
             message = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=512,
                 system=(
+                    f"{context_prefix}"
                     "You are the field intelligence for HHRCS, a remote wildlife camera system. "
                     "You have access to real-time sensor readings, detection history, system "
                     "state, and environmental conditions.\n\n"
@@ -363,7 +394,6 @@ def query_agent(question: str) -> dict:
         "context_snapshot": {
             "state":               summary.get("state", "UNKNOWN"),
             "sim_mode":            summary.get("sim_mode", True),
-            "ble_state":           summary.get("ble_state", "Unknown"),
             "recent_trigger_count": summary.get("detections_1h", 0),
             "anomalies":           summary.get("anomalies", []),
             "deployment_id":       dep_id,
@@ -381,16 +411,18 @@ def query_agent(question: str) -> dict:
 
 # ── Passive summarizer (Tier 1 only) ──────────────────────────────────────────
 
-def run_passive_summary():
-    """Called every 5 min by the passive scheduler in api_server.py."""
+def run_passive_summary(summary: dict = None) -> dict:
+    """Called every 5 min by the passive scheduler in api_server.py.
+    Accepts a pre-built summary to avoid a redundant build_summary() call."""
     entry_id  = datetime.now().strftime("agent_%Y%m%d_%H%M%S")
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    try:
-        summary = build_summary()
-    except Exception as e:
-        log.error(f"run_passive_summary: build_summary failed: {e}")
-        return
+    if summary is None:
+        try:
+            summary = build_summary()
+        except Exception as e:
+            log.error(f"run_passive_summary: build_summary failed: {e}")
+            return
 
     dep_id        = None
     dep_name      = None
@@ -417,7 +449,6 @@ def run_passive_summary():
         "context_snapshot": {
             "state":               summary["state"],
             "sim_mode":            summary["sim_mode"],
-            "ble_state":           summary["ble_state"],
             "recent_trigger_count": summary["detections_1h"],
             "anomalies":           summary["anomalies"],
             "deployment_id":       dep_id,

@@ -2,7 +2,9 @@ name: Build iOS
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'feature/**'
   workflow_dispatch:
 
 jobs:
@@ -19,11 +21,6 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Set build number
-        run: |
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" \
-            HHRCS/Info.plist
-
       - name: Build archive (unsigned)
         run: |
           xcodebuild archive \
@@ -35,7 +32,9 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            CODE_SIGN_STYLE=Manual
+            CODE_SIGN_STYLE=Manual \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            MARKETING_VERSION=0.4.2
 
       - name: Package IPA
         run: |

@@ -47,13 +47,11 @@ struct StillFrameView: View {
         #endif
     }
 
-    // MARK: – Capturing indicator
-
     private var capturingView: some View {
         VStack(spacing: 12) {
             Spacer()
             ProgressView()
-                .tint(Theme.accent)
+                .tint(Theme.text1)
                 .scaleEffect(1.1)
             Text("CAPTURING")
                 .font(Theme.dataLabel(size: 9))
@@ -63,8 +61,6 @@ struct StillFrameView: View {
         }
         .frame(maxWidth: .infinity)
     }
-
-    // MARK: – Empty state
 
     private var emptyState: some View {
         VStack(spacing: 16) {
@@ -80,30 +76,33 @@ struct StillFrameView: View {
         }
         .frame(maxWidth: .infinity)
     }
-
 }
 
 // MARK: – Fullscreen viewer with pinch-to-zoom + pan
 
 struct FullscreenImageView: View {
-    let image: PlatformImage
+    let image:       PlatformImage
     @Binding var isPresented: Bool
+    var sourceLabel: String?       = nil
+    var onDelete:    (() -> Void)? = nil
 
-    @State private var scale:      CGFloat = 1.0
-    @State private var lastScale:  CGFloat = 1.0
-    @State private var offset:     CGSize  = .zero
-    @State private var lastOffset: CGSize  = .zero
+    @State private var scale:            CGFloat = 1.0
+    @State private var lastScale:        CGFloat = 1.0
+    @State private var offset:           CGSize  = .zero
+    @State private var lastOffset:       CGSize  = .zero
+    @State private var showDeleteConfirm: Bool   = false
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                Theme.background.ignoresSafeArea()
+        ZStack {
+            Theme.background.ignoresSafeArea()
 
+            GeometryReader { geo in
                 Image(platformImage: image)
                     .resizable()
                     .scaledToFit()
                     .scaleEffect(scale)
                     .offset(offset)
+                    .frame(width: geo.size.width, height: geo.size.height)
                     .gesture(
                         MagnificationGesture()
                             .onChanged { v in
@@ -131,24 +130,56 @@ struct FullscreenImageView: View {
                             }
                             .onEnded { _ in lastOffset = offset }
                     )
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 0.4)
+                            .onEnded { _ in
+                                guard onDelete != nil else { return }
+                                #if os(iOS)
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                #endif
+                                showDeleteConfirm = true
+                            }
+                    )
+            }
+            .ignoresSafeArea()
 
-                VStack {
-                    HStack {
-                        Spacer()
-                        Button { isPresented = false } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundStyle(.white)
-                                .padding(20)
-                        }
-                        .buttonStyle(.plain)
+            VStack {
+                HStack {
+                    if let label = sourceLabel {
+                        Text(label)
+                            .font(.system(size: 9, weight: .regular, design: .monospaced))
+                            .foregroundStyle(Theme.tertiary)
+                            .padding(.leading, 16)
                     }
                     Spacer()
+                    Button { isPresented = false } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 8)
                 }
+                .padding(.top, 8)
+                Spacer()
             }
-            .frame(width: geo.size.width, height: geo.size.height)
+
+            if showDeleteConfirm {
+                ConfirmationCard(
+                    title:        "DELETE STILL?",
+                    message:      "This cannot be undone.",
+                    confirmLabel: "DELETE",
+                    onConfirm: {
+                        showDeleteConfirm = false
+                        isPresented = false
+                        onDelete?()
+                    },
+                    onCancel: { showDeleteConfirm = false }
+                )
+            }
         }
-        .ignoresSafeArea()
     }
 
     private func clampBounds(in geo: GeometryProxy) -> (CGFloat, CGFloat) {

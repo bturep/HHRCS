@@ -1,8 +1,11 @@
 import time
 import threading
+import logging
 from enum import Enum
 from typing import Optional, Callable
 from config import config
+
+log = logging.getLogger(__name__)
 
 try:
     from events import emit as _emit
@@ -34,6 +37,8 @@ class StateMachine:
         self.countdown_start_time: Optional[float] = None
         self.window_open: bool = False
 
+        self.manual_override: bool = False
+
         self._lock = threading.Lock()
         self._timer: Optional[threading.Timer] = None
 
@@ -45,9 +50,9 @@ class StateMachine:
 
     def open_window(self, trigger: TriggerType = TriggerType.SCHEDULED):
         with self._lock:
+            if self.manual_override:
+                return
             self.window_open = True
-            if self.state == RecordState.IDLE:
-                self._start_recording(trigger)
 
     def close_window(self):
         with self._lock:
@@ -57,6 +62,8 @@ class StateMachine:
 
     def detection_event(self, class_name: str):
         with self._lock:
+            if self.manual_override:
+                return
             self.last_class = class_name
             self.last_detection_time = time.time()
             trigger = TriggerType[class_name.upper()] if class_name.upper() in TriggerType.__members__ else TriggerType.NONE
@@ -64,7 +71,7 @@ class StateMachine:
             if self.state == RecordState.IDLE and self.window_open:
                 self._start_recording(trigger)
             elif self.state == RecordState.IDLE and not self.window_open:
-                self._start_recording(trigger)
+                log.debug(f"detection suppressed — window closed ({class_name})")
             elif self.state == RecordState.HOLDING:
                 prev = self.state
                 self.state = RecordState.ACTIVE
@@ -150,7 +157,23 @@ class StateMachine:
 
     def force_start(self):
         with self._lock:
+            self.manual_override = False
             self._start_recording(TriggerType.MANUAL)
+
+    def force_idle(self):
+        with self._lock:
+            self._cancel_timer()
+            prev = self.state
+            self.state = RecordState.IDLE
+            self.trigger_type = TriggerType.NONE
+            self.recording_start_time = None
+            self.countdown_start_time = None
+            self.manual_override = True
+            _emit("state.transition", {"from_state": prev.value, "to_state": self.state.value, "reason": "manual override stop"})
+            self._notify_state_change()
+
+    def is_recording(self) -> bool:
+        return self.state != RecordState.IDLE
 
     def force_stop(self):
         with self._lock:
@@ -198,6 +221,7 @@ class StateMachine:
             "elapsed_formatted": self._format_elapsed(elapsed),
             "countdown_remaining": self.countdown_remaining,
             "window_open": self.window_open,
+            "manual_override": self.manual_override,
         }
 
     @staticmethod

@@ -58,12 +58,12 @@ try:
             log.debug(f"BMP/BME280 not found: {e}")
 
 except Exception as e:
-    log.warning(f"I2C bus not available, using simulated sensors: {e}")
+    log.info(f"I2C bus not available: {e} — env/lux readings will be None")
 
 if not _hardware_lux:
-    log.warning("No lux sensor found — simulating light values")
+    log.info("no lux sensor present — lux/EV readings will be None")
 if not _hardware_env:
-    log.warning("No env sensor found — simulating temperature/humidity/pressure")
+    log.info("no env sensor present — temperature/humidity/pressure readings will be None")
 
 # ── Mutable state ──────────────────────────────────────────────────────────────
 
@@ -75,7 +75,7 @@ _house_drive_used_gb = 400.0
 
 # ── Lux ───────────────────────────────────────────────────────────────────────
 
-def read_lux() -> float:
+def read_lux() -> float | None:
     if _hardware_lux:
         try:
             if _tsl:
@@ -85,49 +85,46 @@ def read_lux() -> float:
                 return float(_bh1750.lux)
         except Exception as e:
             log.debug(f"Lux read error: {e}")
-    # Diurnal simulation
-    t = time.localtime()
-    hour = t.tm_hour + t.tm_min / 60.0
-    if hour < 4 or hour > 22:
-        return round(random.uniform(0.05, 0.5), 2)
-    peak = 13.0
-    base = 45000 * math.exp(-0.5 * ((hour - peak) / 5.5) ** 2)
-    return round(max(0.1, base + random.uniform(-base * 0.04, base * 0.04)), 2)
+    return None
 
-def read_ev() -> float:
+def read_ev() -> float | None:
     lux = read_lux()
+    if lux is None:
+        return None
     return round(math.log2(max(lux, 0.01) / 2.5), 2)
 
 # ── Environment ───────────────────────────────────────────────────────────────
 
-def read_temperature() -> float:
+def read_temperature() -> float | None:
     if _hardware_env and _bmp:
         try:
             return round(float(_bmp.temperature), 1)
         except Exception as e:
             log.debug(f"Temp read error: {e}")
-    return round(12.0 + random.uniform(-0.3, 0.3), 1)
+    return None
 
-def read_humidity() -> float:
+def read_humidity() -> float | None:
     if _hardware_env and _bmp:
         try:
             if hasattr(_bmp, "humidity"):   # BME280 has humidity; BMP280 does not
                 return round(float(_bmp.humidity), 1)
         except Exception as e:
             log.debug(f"Humidity read error: {e}")
-    return round(72.0 + random.uniform(-1.5, 1.5), 1)
+    return None
 
-def read_pressure() -> float:
+def read_pressure() -> float | None:
     if _hardware_env and _bmp:
         try:
             return round(float(_bmp.pressure), 1)
         except Exception as e:
             log.debug(f"Pressure read error: {e}")
-    return round(1013.0 + random.uniform(-0.5, 0.5), 1)
+    return None
 
-def read_dew_point() -> float:
+def read_dew_point() -> float | None:
     t = read_temperature()
     h = read_humidity()
+    if t is None or h is None:
+        return None
     a, b = 17.27, 237.7
     alpha = (a * t / (b + t)) + math.log(max(h, 1) / 100.0)
     return round((b * alpha) / (a - alpha), 1)

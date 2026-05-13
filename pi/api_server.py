@@ -3,7 +3,7 @@ HHRCS API Server — Raspberry Pi
 Flask REST API consumed by the HHRCS iOS/macOS app via Tailscale.
 
 Hardware path for camera commands:
-    Pi  →─(USB serial)─→  ESP32 (BlueMagic32 / Magic-Pocket-Control)  →─(BLE)─→  BMPCC 6K Pro
+    Pi  →─(ethernet)─→  BMPCC 6K Pro REST API (192.168.10.2)
 
 Endpoints match the simulation server exactly so the iOS app needs no changes
 when switching from sim (Mac) to real (Pi).
@@ -19,7 +19,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 
-from config import config
+from config import config, CAMERA_BASE_URL, HDMI_DEVICE
 from state_machine import StateMachine, TriggerType
 from sensors import (
     to_dict as sensors_dict,
@@ -33,6 +33,7 @@ from sensors import (
 )
 from detector import Detector
 from camera_control import camera
+from camera_http import BMPCCCameraClient
 from session import (
     log_session, get_sessions, get_agent_log,
     get_field_notes, save_field_note, log_agent_entry,
@@ -43,6 +44,13 @@ import agent
 import deployment
 import notifier
 import notifications
+import storage_monitor
+from system_logger import SystemLogger
+try:
+    from hdmi_stream import HDMIStreamer as _HDMIStreamer
+except ImportError:
+    _HDMIStreamer = None
+    log.warning("hdmi_stream unavailable (cv2 not installed) — HDMI endpoints disabled")
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 
@@ -59,12 +67,50 @@ log = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
+# ── Shared camera HTTP client (singleton for /camera/* endpoints) ──────────────
+_cam_client = BMPCCCameraClient()
+
+# ── HDMI capture card streamer ─────────────────────────────────────────────────
+if _HDMIStreamer is not None:
+    _hdmi = _HDMIStreamer()
+    try:
+        _hdmi.start()
+    except Exception as _e:
+        log.warning(f"HDMI streamer failed to start: {_e}")
+else:
+    _hdmi = None
+
+# Clip name to use for the next record start (set via PUT /camera/clip_name)
+_next_clip_name: str = ""
+
 # ── State machine + hardware wiring ───────────────────────────────────────────
 
 sm = StateMachine()
+sm.manual_override = False          # explicit: fresh start is never blocked
 _uptime_start = time.time()
 _current_clip_id: str = ""
 _camera_started: bool = False
+_system_logger: SystemLogger = None   # initialized after detector is ready
+
+# Load persisted detector threshold (survives service restarts)
+_THRESHOLD_FILE = os.path.join(os.path.dirname(__file__), "data", "detector_threshold.json")
+try:
+    if os.path.exists(_THRESHOLD_FILE):
+        with open(_THRESHOLD_FILE) as _tf:
+            _saved_thresh = json.load(_tf).get("value", config.detector_confidence_threshold)
+            config.detector_confidence_threshold = float(_saved_thresh)
+            config.detection_confidence          = float(_saved_thresh)
+except Exception as _e:
+    log.warning(f"Could not load persisted threshold: {_e}")
+
+_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "data", "settings.json")
+try:
+    if os.path.exists(_SETTINGS_FILE):
+        with open(_SETTINGS_FILE) as _sf:
+            _saved_settings = json.load(_sf)
+            config.dawn_dusk_enabled = bool(_saved_settings.get("dawn_dusk_enabled", config.dawn_dusk_enabled))
+except Exception as _e:
+    log.warning(f"Could not load settings: {_e}")
 
 emit("system.startup", {"subsystem": "api_server"})
 
@@ -72,12 +118,8 @@ emit("system.startup", {"subsystem": "api_server"})
 def _on_record_start(trigger):
     global _current_clip_id, _camera_started
     _sensors_start()
-    if trigger == TriggerType.MANUAL or detector._using_real:
-        camera.record_start()
-        _camera_started = True
-    else:
-        _camera_started = False
-        log.info(f"Sim mode — skipping camera.record_start (trigger={trigger})")
+    camera.record_start()
+    _camera_started = True
     _current_clip_id = datetime.now().strftime("hhrcs_%Y%m%d_%H%M%S")
     dep = deployment.get_active_deployment()
     base = (Path(__file__).parent / "deployments" / dep["id"] / "clips" / _current_clip_id
@@ -88,31 +130,15 @@ def _on_record_start(trigger):
     emit("recording.started", {"clip_id": _current_clip_id, "source": "bmpcc"})
     notifications.emit("recording.started", "HHRCS — Recording", f"Started clip {_current_clip_id}")
     log.info(f"Recording started — trigger={trigger} clip={_current_clip_id}")
+    if _system_logger:
+        _system_logger.log_event("recording", f"started clip={_current_clip_id} trigger={trigger.value}")
 
 
 def _on_record_stop(elapsed):
-    global _current_clip_id
-    global _camera_started
+    global _current_clip_id, _camera_started
     _sensors_stop()
-    if _camera_started:
-        camera.record_stop()
-        _camera_started = False
-    else:
-        log.info(f"Sim mode — skipping camera.record_stop")
-
-    # BLE drop guard — poll bridge once after stop to catch silent disconnects
-    try:
-        ble = camera.ble_state
-        if ble != "Connected":
-            emit("system.error", {
-                "subsystem": "api_server",
-                "error_type": "ble_drop_during_stop",
-                "message": f"BLE state after record stop: {ble}",
-                "clip_id": _current_clip_id,
-            })
-            log.warning(f"BLE drop guard: state={ble} after stop for clip={_current_clip_id}")
-    except Exception as e:
-        log.warning(f"BLE drop guard check failed: {e}")
+    camera.record_stop()
+    _camera_started = False
 
     lux = read_lux()
     emit("recording.stopped", {
@@ -129,7 +155,10 @@ def _on_record_stop(elapsed):
         nd=config.nd_filter,
         files=random.randint(1, 3),
     )
-    log.info(f"Recording stopped — elapsed={int(elapsed)}s lux={lux:.1f} clip={_current_clip_id}")
+    lux_str = f"{lux:.1f}" if lux is not None else "--"
+    log.info(f"Recording stopped — elapsed={int(elapsed)}s lux={lux_str} clip={_current_clip_id}")
+    if _system_logger:
+        _system_logger.log_event("recording", f"stopped clip={_current_clip_id} duration={int(elapsed)}s")
 
 
 sm.on_record_start = _on_record_start
@@ -155,15 +184,32 @@ detector = Detector(
     fps=config.detection_fps,
     resolution=config.detection_resolution,
 )
+if not config.dawn_dusk_enabled:
+    sm.open_window(TriggerType.SCHEDULED)
+    log.info("dawn/dusk disabled — recording window opened at startup")
 detector.start()
 agent.init(detector, sm, camera)
 notifier.start()
 
+_system_logger = SystemLogger(
+    detector=detector, hdmi=_hdmi, cam_client=_cam_client, uptime_start=_uptime_start
+)
+_system_logger.start()
+_system_logger.log_event("service_start", f"hhrcs.service started, pid={os.getpid()}")
+
 def _start_passive_agent():
     try:
-        agent.run_passive_summary()
+        summary = agent.build_summary()
+        summary["storage"] = storage_monitor.get_storage_stats()
+        summary["yolo_running"] = bool(detector._thread and detector._thread.is_alive())
+        fired = notifier.evaluate_and_notify(summary)
+        if fired and _system_logger:
+            _system_logger.log_event("ntfy_sent", ", ".join(fired))
+        agent.run_passive_summary(summary)
     except Exception as e:
         log.warning(f"Passive agent error: {e}")
+        if _system_logger:
+            _system_logger.log_event("error", f"passive agent: {e}")
     threading.Timer(300, _start_passive_agent).start()
 
 threading.Timer(60, _start_passive_agent).start()
@@ -187,26 +233,31 @@ def _schedule_windows():
 
         while True:
             try:
-                s = sun(loc.observer, date=date.today(), tzinfo=tz)
-                now = datetime.now(tz)
-
-                from datetime import timedelta
-                dawn_open  = s["dawn"]  + timedelta(minutes=config.dawn_offset_minutes)
-                dawn_close = s["sunrise"] + timedelta(minutes=config.dawn_close_minutes)
-                dusk_open  = s["sunset"] + timedelta(minutes=config.dusk_open_minutes)
-                dusk_close = s["dusk"]  + timedelta(minutes=config.dusk_close_minutes)
-
-                in_dawn = dawn_open <= now <= dawn_close
-                in_dusk = dusk_open <= now <= dusk_close
-
-                if in_dawn or in_dusk:
+                if not config.dawn_dusk_enabled:
                     if not sm.window_open:
                         sm.open_window(TriggerType.SCHEDULED)
-                        log.info(f"Scheduled window opened ({'dawn' if in_dawn else 'dusk'})")
+                        log.info("dawn/dusk disabled — re-opened window")
                 else:
-                    if sm.window_open and sm.trigger_type == TriggerType.SCHEDULED:
-                        sm.close_window()
-                        log.info("Scheduled window closed")
+                    s = sun(loc.observer, date=date.today(), tzinfo=tz)
+                    now = datetime.now(tz)
+
+                    from datetime import timedelta
+                    dawn_open  = s["dawn"]  + timedelta(minutes=config.dawn_offset_minutes)
+                    dawn_close = s["sunrise"] + timedelta(minutes=config.dawn_close_minutes)
+                    dusk_open  = s["sunset"] + timedelta(minutes=config.dusk_open_minutes)
+                    dusk_close = s["dusk"]  + timedelta(minutes=config.dusk_close_minutes)
+
+                    in_dawn = dawn_open <= now <= dawn_close
+                    in_dusk = dusk_open <= now <= dusk_close
+
+                    if in_dawn or in_dusk:
+                        if not sm.window_open:
+                            sm.open_window(TriggerType.SCHEDULED)
+                            log.info(f"Scheduled window opened ({'dawn' if in_dawn else 'dusk'})")
+                    else:
+                        if sm.window_open and sm.trigger_type == TriggerType.SCHEDULED:
+                            sm.close_window()
+                            log.info("Scheduled window closed")
             except Exception as e:
                 log.error(f"Scheduler error: {e}")
 
@@ -261,6 +312,35 @@ def _ssd_free_pct() -> float:
     except Exception:
         return 0.0
 
+
+def _pi_sd_used_pct() -> float:
+    try:
+        import shutil as _shutil
+        u = _shutil.disk_usage("/")
+        return round(u.used / u.total * 100, 1) if u.total > 0 else 0.0
+    except Exception:
+        return 0.0
+
+
+def _get_external_drives() -> list:
+    import shutil as _shutil
+    drives = []
+    try:
+        for entry in os.scandir("/media"):
+            if entry.is_dir() and os.path.ismount(entry.path) and entry.path != config.ssd_mount:
+                try:
+                    u = _shutil.disk_usage(entry.path)
+                    drives.append({
+                        "name":        entry.name,
+                        "used_bytes":  u.used,
+                        "total_bytes": u.total,
+                    })
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return drives
+
 # ── /status ────────────────────────────────────────────────────────────────────
 
 @app.route("/status")
@@ -269,11 +349,15 @@ def status():
     cam = get_camera_state()
     sm_data = sm.to_dict()
     uptime = int(time.time() - _uptime_start)
+    cam_state = _cam_client.get_full_state()
 
+    today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return jsonify({
         "deployment": config.deployment_name,
         "position": config.position_name,
         "uptime_seconds": uptime,
+        "uptime_s": uptime,
+        "system_log_path": f"data/system_metrics_{today_utc}.jsonl",
         "timestamp": datetime.now().isoformat(),
 
         "lux": sensor_data["lux"],
@@ -281,7 +365,7 @@ def status():
         "nd_filter": cam["nd_filter"],
         "iso": cam["iso"],
 
-        "recording": cam["recording"],
+        "recording": sm.is_recording() or cam_state["cam_recording"],
         "recording_state": sm_data["state"],
         "elapsed_seconds": sm_data["elapsed_seconds"],
         "elapsed_formatted": sm_data["elapsed_formatted"],
@@ -296,6 +380,7 @@ def status():
         "last_detection_time": sm_data["last_detection_time"],
         "countdown_remaining": sm_data["countdown_remaining"],
         "window_open": sm_data["window_open"],
+        "manual_override": sm_data["manual_override"],
 
         "temperature_c": sensor_data["temperature_c"],
         "humidity_pct": sensor_data["humidity_pct"],
@@ -306,20 +391,42 @@ def status():
         "house_drive_used_tb": read_house_drive_used_tb(),
         "house_drive_total_tb": config.house_drive_total_tb,
 
-        "esp32_connected": camera.connected,
-        "esp32_bridge_reachable": camera.bridge_reachable,
-        "esp32_ble_state": camera.ble_state,
-        "esp32_port": camera.port_name,
+        # Camera (ethernet REST API)
+        "cam_reachable":             cam_state["cam_reachable"],
+        "cam_recording":             cam_state["cam_recording"],
+        "cam_codec":                 cam_state["cam_codec"],
+        "cam_frame_rate":            cam_state["cam_frame_rate"],
+        "cam_resolution":            cam_state["cam_resolution"],
+        "cam_iso":                   cam_state["cam_iso"],
+        "cam_white_balance":         cam_state["cam_white_balance"],
+        "cam_gain":                  cam_state["cam_gain"],
+        "cam_active_media_slot":     cam_state["cam_active_media_slot"],
+        "cam_remaining_record_time": cam_state["cam_remaining_record_time"],
+        "cam_shutter_angle":         cam_state["cam_shutter_angle"],
+        "cam_lens":                  cam_state["cam_lens"],
+        "cam_codec_variant":         cam_state["cam_codec_variant"],
+        "cam_format_details":        cam_state["cam_format_details"],
+
         "hardware_lux": sensor_data.get("hardware_lux", False),
         "hardware_env": sensor_data.get("hardware_env", False),
 
         "detector_last_inference_ago_seconds": detector.last_inference_ago_seconds,
 
-        "yolo_running":    bool(detector._thread and detector._thread.is_alive()),
-        "yolo_sim_mode":   not detector._using_real,
-        "machine_state":   sm_data["state"],
-        "ssd_mounted":     os.path.ismount(config.ssd_mount),
-        "ssd_free_pct":    _ssd_free_pct(),
+        "yolo_running":        bool(detector._thread and detector._thread.is_alive()),
+        "detector_threshold":  config.detector_confidence_threshold,
+        "detector_fps_actual": detector.get_fps_actual(),
+        "machine_state":       sm_data["state"],
+        "ssd_mounted":         os.path.ismount(config.ssd_mount),
+        "ssd_free_pct":        _ssd_free_pct(),
+        "pi_sd_used_pct":      _pi_sd_used_pct(),
+
+        "storage": storage_monitor.get_storage_stats(),
+
+        "external_drives": _get_external_drives(),
+
+        "hdmi_reachable": _hdmi.is_open() if _hdmi else False,
+
+        "dawn_dusk_enabled": config.dawn_dusk_enabled,
 
         # Deployment scope
         **_deployment_status_fields(),
@@ -499,8 +606,6 @@ def trigger_still():
         with open(path, "wb") as f:
             f.write(jpeg)
         ts = datetime.now().strftime("%H:%M:%S")
-        log_agent_entry("observation", f"Still captured at {ts}.")
-        notifications.emit("still.captured", "HHRCS — Still", "Pi cam still saved")
         return jsonify({"ok": True, "timestamp": ts, "bytes": len(jpeg)})
     return jsonify({"ok": False, "error": "no frame available"}), 503
 
@@ -545,6 +650,56 @@ def set_timeout():
     config.countdown_seconds = seconds
     return jsonify({"ok": True, "countdown_seconds": seconds})
 
+# ── Camera (BMPCC REST API passthrough) ───────────────────────────────────────
+
+@app.route("/camera/status", methods=["GET"])
+def camera_status():
+    return jsonify(_cam_client.get_full_state())
+
+@app.route("/camera/record/start", methods=["PUT", "POST"])
+def camera_record_start():
+    global _next_clip_name
+    _next_clip_name = ""
+    sm.force_start()        # clears manual_override, transitions state machine, fires _on_record_start → camera.record_start()
+    return jsonify({"ok": True})
+
+@app.route("/camera/record/stop", methods=["PUT", "POST"])
+def camera_record_stop():
+    ok = _cam_client.record_stop()
+    sm.force_idle()
+    return jsonify({"ok": ok})
+
+@app.route("/camera/iso", methods=["PUT"])
+def camera_set_iso():
+    data = request.json or {}
+    iso = data.get("iso")
+    if not isinstance(iso, int):
+        return jsonify({"error": "iso (int) required"}), 400
+    ok = _cam_client.set_iso(iso)
+    return jsonify({"ok": ok})
+
+@app.route("/camera/white_balance", methods=["PUT"])
+def camera_set_wb():
+    data = request.json or {}
+    kelvin = data.get("kelvin")
+    if not isinstance(kelvin, int):
+        return jsonify({"error": "kelvin (int) required"}), 400
+    ok = _cam_client.set_white_balance(kelvin)
+    return jsonify({"ok": ok})
+
+@app.route("/camera/format", methods=["PUT"])
+def camera_set_format():
+    data = request.json or {}
+    ok = _cam_client.set_format(**data)
+    return jsonify({"ok": ok})
+
+@app.route("/camera/clip_name", methods=["PUT"])
+def camera_set_clip_name():
+    global _next_clip_name
+    data = request.json or {}
+    _next_clip_name = str(data.get("clip_name", ""))
+    return jsonify({"ok": True, "clip_name": _next_clip_name})
+
 # ── MJPEG stream ───────────────────────────────────────────────────────────────
 
 def _mjpeg_frames():
@@ -566,33 +721,57 @@ def stream():
         mimetype="multipart/x-mixed-replace; boundary=frame",
     )
 
+# ── HDMI capture endpoints ─────────────────────────────────────────────────────
+
+_HDMI_STILLS_DIR = os.path.join(os.path.dirname(__file__), "stills", "hdmi")
+
+@app.route("/hdmi-stream")
+def hdmi_stream():
+    """MJPEG stream from the HDMI capture card."""
+    if _hdmi is None:
+        return jsonify({"error": "HDMI capture not available"}), 503
+    return Response(
+        _hdmi.generate_mjpeg(),
+        mimetype="multipart/x-mixed-replace; boundary=frame",
+    )
+
+@app.route("/hdmi/still", methods=["POST"])
+def hdmi_still():
+    if _hdmi is None:
+        return jsonify({"ok": False, "error": "HDMI capture not available"}), 503
+    os.makedirs(_HDMI_STILLS_DIR, exist_ok=True)
+    jpeg = _hdmi.capture_jpeg()
+    if jpeg:
+        path = os.path.join(_HDMI_STILLS_DIR, "latest.jpg")
+        with open(path, "wb") as f:
+            f.write(jpeg)
+        ts = datetime.now().strftime("%H:%M:%S")
+        return jsonify({"ok": True, "timestamp": ts, "bytes": len(jpeg)})
+    return jsonify({"ok": False, "error": "no HDMI frame available"}), 503
+
+@app.route("/hdmi/stills/latest", methods=["GET"])
+def hdmi_stills_latest():
+    path = os.path.join(_HDMI_STILLS_DIR, "latest.jpg")
+    if not os.path.exists(path):
+        return jsonify({"error": "no HDMI still available"}), 404
+    with open(path, "rb") as f:
+        data = f.read()
+    return Response(data, mimetype="image/jpeg")
+
 # ── Event bus endpoints ────────────────────────────────────────────────────────
 
 @app.route("/events", methods=["GET"])
 def get_events():
     """
-    Merged event stream: local ring buffer + bridge events from :5002.
+    Local event ring buffer.
     ?window=300  — lookback seconds (default 300)
     ?types=a,b   — comma-separated type filter
     """
-    import requests as _req
-
     window = request.args.get("window", 300, type=int)
     types_param = request.args.get("types", "")
     types = [t.strip() for t in types_param.split(",") if t.strip()] or None
 
     local = recent(window_seconds=window, types=types)
-
-    bridge = []
-    try:
-        params = {"window": window}
-        if types_param:
-            params["types"] = types_param
-        r = _req.get("http://127.0.0.1:5002/esp32/events", params=params, timeout=1.0)
-        if r.ok:
-            bridge = r.json()
-    except Exception:
-        pass
 
     dep = deployment.get_active_deployment()
     if dep:
@@ -600,13 +779,11 @@ def get_events():
             cutoff = datetime.fromisoformat(dep["started_at"])
             if cutoff.tzinfo is None:
                 cutoff = cutoff.replace(tzinfo=timezone.utc)
-            local  = [e for e in local  if _ts_after(e.get("ts", ""), cutoff)]
-            bridge = [e for e in bridge if _ts_after(e.get("ts", ""), cutoff)]
+            local = [e for e in local if _ts_after(e.get("ts", ""), cutoff)]
         except Exception:
             pass
 
-    merged = sorted(local + bridge, key=lambda e: e.get("ts", ""))
-    return jsonify(merged)
+    return jsonify(local)
 
 
 @app.route("/log", methods=["GET"])
@@ -622,29 +799,6 @@ def get_log():
 
 
 # ── System control ────────────────────────────────────────────────────────────
-
-@app.route("/system/restart-bridge", methods=["POST"])
-def restart_bridge():
-    import subprocess
-    try:
-        # esp32-bridge runs as pi (User=pi in service file); pkill signals the process directly.
-        # systemd Restart=always handles the relaunch — no sudo needed.
-        subprocess.run(["pkill", "-f", "esp32_bridge.py"], check=False)
-        time.sleep(3)
-        return jsonify({"ok": True})
-    except Exception as e:
-        log.error(f"restart-bridge failed: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-@app.route("/system/reset-esp32", methods=["POST"])
-def reset_esp32_endpoint():
-    try:
-        import requests as _req2
-        r = _req2.post("http://127.0.0.1:5002/esp32/reset", timeout=5)
-        return jsonify({"ok": r.ok})
-    except Exception as e:
-        log.error(f"reset-esp32 failed: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/system/restart-hhrcs", methods=["POST"])
 def restart_hhrcs():
@@ -666,6 +820,77 @@ def restart_detector_endpoint():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+# ── Detection history endpoints ────────────────────────────────────────────────
+
+@app.route("/detections/recent", methods=["GET"])
+def detections_recent():
+    """All detections from the last 24h, newest first."""
+    return jsonify({"detections": detector.get_recent_detections(hours=24)})
+
+
+@app.route("/detections/latest", methods=["GET"])
+def detections_latest():
+    """Most recent detection if it occurred within the last 60s, else null."""
+    recent_all = detector.get_recent_detections(hours=24)
+    if recent_all:
+        from datetime import datetime as _dt, timezone as _tz
+        latest = recent_all[0]
+        try:
+            ts_dt = _dt.fromisoformat(latest["ts"])
+            if ts_dt.tzinfo is None:
+                ts_dt = ts_dt.replace(tzinfo=_tz.utc)
+            age = (_dt.now(_tz.utc) - ts_dt).total_seconds()
+            if age <= 60:
+                return jsonify({"detection": latest})
+        except Exception:
+            pass
+    return jsonify({"detection": None})
+
+
+@app.route("/detector/threshold", methods=["POST"])
+def detector_threshold():
+    """Update confidence threshold in memory and persist to disk."""
+    data = request.json or {}
+    try:
+        value = float(data.get("value", config.detector_confidence_threshold))
+    except (TypeError, ValueError):
+        return jsonify({"error": "value must be a number"}), 400
+    if not (0.0 <= value <= 1.0):
+        return jsonify({"error": "value must be in [0.0, 1.0]"}), 400
+    config.detector_confidence_threshold = value
+    config.detection_confidence          = value
+    try:
+        os.makedirs(os.path.dirname(_THRESHOLD_FILE), exist_ok=True)
+        with open(_THRESHOLD_FILE, "w") as f:
+            json.dump({"value": value}, f)
+    except Exception as e:
+        log.warning(f"Could not persist threshold: {e}")
+    return jsonify({"ok": True, "value": value})
+
+
+def _save_settings():
+    try:
+        os.makedirs(os.path.dirname(_SETTINGS_FILE), exist_ok=True)
+        with open(_SETTINGS_FILE, "w") as f:
+            json.dump({"dawn_dusk_enabled": config.dawn_dusk_enabled}, f)
+    except Exception as e:
+        log.warning(f"Could not save settings: {e}")
+
+
+@app.route("/settings/dawn_dusk", methods=["POST"])
+def settings_dawn_dusk():
+    data = request.json or {}
+    enabled = data.get("enabled")
+    if not isinstance(enabled, bool):
+        return jsonify({"error": "enabled (bool) required"}), 400
+    config.dawn_dusk_enabled = enabled
+    _save_settings()
+    if not enabled and not sm.window_open:
+        sm.open_window(TriggerType.SCHEDULED)
+        log.info("dawn/dusk disabled via API — window opened")
+    return jsonify({"ok": True, "dawn_dusk_enabled": enabled, "window_open": sm.window_open})
+
+
 @app.route("/notifier/test", methods=["POST"])
 def notifier_test():
     sent = notifier.send_alert(
@@ -683,19 +908,19 @@ def health():
     return jsonify({
         "ok": True,
         "uptime": int(time.time() - _uptime_start),
-        "esp32": camera.connected,
-        "esp32_port": camera.port_name,
+        "cam_reachable": _cam_client.is_reachable(),
     })
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", config.api_port))
+    cam_ok = _cam_client.is_reachable()
     print(f"\n{'─'*56}")
     print(f"  HHRCS — Raspberry Pi")
     print(f"  {config.deployment_name} · {config.position_name}")
     print(f"  http://0.0.0.0:{port}")
-    print(f"  ESP32: {'connected on ' + str(camera.port_name) if camera.connected else 'NOT CONNECTED'}")
+    print(f"  Camera: {'reachable at ' + CAMERA_BASE_URL if cam_ok else 'NOT REACHABLE'}")
     print(f"{'─'*56}\n")
     os.makedirs(os.path.join(os.path.dirname(__file__), "logs"), exist_ok=True)
     app.run(host=config.api_host, port=port, debug=False, threaded=True)

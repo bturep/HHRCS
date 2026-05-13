@@ -2,6 +2,69 @@ import Foundation
 import Combine
 import SwiftUI
 
+// Tri-state BMPCC recording state — idle / actively recording / BMPCC finalizing clip to SSD
+enum RecordingState: Equatable {
+    case idle
+    case recording
+    case finalizing  // ~10s clip flush after stop; resolves to idle once Pi confirms
+}
+
+struct DetectionHistoryItem: Identifiable, Decodable {
+    let id = UUID()
+    let ts:             String
+    let detectionClass: String
+    let confidence:     Double
+    let bbox:           [Double]   // [x_min, y_min, x_max, y_max] normalized 0–1
+    let frameW:         Int
+    let frameH:         Int
+
+    private static let isoFmt: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    var timestamp: Date { Self.isoFmt.date(from: ts) ?? Date(timeIntervalSince1970: 0) }
+
+    var cgRect: CGRect {
+        guard bbox.count == 4 else { return .zero }
+        return CGRect(x: bbox[0], y: bbox[1], width: bbox[2] - bbox[0], height: bbox[3] - bbox[1])
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case ts
+        case detectionClass = "class"
+        case confidence, bbox
+        case frameW = "frame_w"
+        case frameH = "frame_h"
+    }
+}
+
+struct ExternalDrive: Decodable, Identifiable {
+    var id: String { name }
+    let name:       String
+    let usedBytes:  Int
+    let totalBytes: Int
+    var usedPercent: Double { totalBytes > 0 ? Double(usedBytes) / Double(totalBytes) * 100 : 0 }
+    var usedTB:  Double { Double(usedBytes)  / 1_000_000_000_000 }
+    var totalTB: Double { Double(totalBytes) / 1_000_000_000_000 }
+    enum CodingKeys: String, CodingKey {
+        case name
+        case usedBytes  = "used_bytes"
+        case totalBytes = "total_bytes"
+    }
+}
+
+struct StorageSnapshot: Decodable, Identifiable {
+    var id: String { date }
+    let date:      String
+    let usedBytes: Int
+    enum CodingKeys: String, CodingKey {
+        case date
+        case usedBytes = "used_bytes"
+    }
+}
+
 struct Detection: Identifiable {
     let id         = UUID()
     let label:      String
@@ -19,13 +82,14 @@ enum TriggerState: Equatable {
 final class DataViewModel: ObservableObject {
 
     // MARK: – Light
-    @Published var lux: Double = 1240
-    @Published var ev:  Double = 10.2
-    @Published var iso: Int    = 400
+    @Published var lux: Double? = nil
+    @Published var ev:  Double? = nil
+    @Published var iso: Int     = 400
 
     // MARK: – Camera
-    @Published var isRecording:      Bool   = false  // BMPCC via ESP32
-    @Published var isPiCamRecording: Bool   = false  // Pi Camera Module 3
+    @Published var isRecording:      Bool            = false
+    @Published var recordingState:   RecordingState  = .idle
+    @Published var isPiCamRecording: Bool            = false
     @Published var recordingSeconds: Int    = 7243
     @Published var ssdRemainingGB:   Double = 312.4
     @Published var ssdTotalGB:       Double = 480.0
@@ -37,20 +101,30 @@ final class DataViewModel: ObservableObject {
     @Published var countdownValue:     Int          = 0
 
     // MARK: – Enclosure
-    @Published var enclosureTempC:    Double = 18.3
-    @Published var enclosureHumidity: Double = 61.5
-    @Published var pressure:          Double = 1013.2
-    @Published var cpuTemp:           Double = 52.4
-    @Published var smpteTimecode:     String = "00:00:00:00"
+    @Published var enclosureTempC:    Double? = nil
+    @Published var enclosureHumidity: Double? = nil
+    @Published var pressure:          Double? = nil
+    @Published var cpuTemp:           Double  = 0.0
+    @Published var smpteTimecode:     String  = "00:00:00:00"
+    @Published var camTimecode:       String? = nil
 
-    var dewPoint: Double {
-        enclosureTempC - ((100.0 - enclosureHumidity) / 5.0)
+    var dewPoint: Double? {
+        guard let t = enclosureTempC, let h = enclosureHumidity else { return nil }
+        return t - ((100.0 - h) / 5.0)
     }
 
     // MARK: – Storage
     @Published var driveUsedPercent: Double = 47.3
     let driveTotalTB: Double = 6.0
     var driveUsedTB: Double { driveTotalTB * driveUsedPercent / 100.0 }
+
+    // MARK: – SSD (from Pi storage_monitor)
+    @Published var storageFreeGb:           Double? = nil
+    @Published var storageTotalGb:          Double? = nil
+    @Published var storageUsedPct:          Double? = nil
+    @Published var storageDaysRemaining:    Double? = nil
+    @Published var storageBurnRateGbPerDay: Double? = nil
+    @Published var storageSnapshots:        [StorageSnapshot] = []
 
     // MARK: – Still capture
     @Published var lastStillData:        Data? = nil
@@ -59,9 +133,18 @@ final class DataViewModel: ObservableObject {
     @Published var isCapturingStill:     Bool  = false
 
     // MARK: – YOLO / machine state (from Pi /status)
-    @Published var yoloLocked:   Bool       = false
-    @Published var machineState: String     = "IDLE"
-    @Published var detections:   [Detection] = []
+    @Published var yoloLocked:        Bool       = false
+    @Published var machineState:      String     = "IDLE"
+    @Published var detections:        [Detection] = []
+    @Published var detectorThreshold: Double     = 0.6
+    @Published var detectorFpsActual: Double?    = nil
+
+    // MARK: – Detection history (from /detections/recent, polled when LOG visible)
+    @Published var detectionHistory: [DetectionHistoryItem] = []
+
+    // MARK: – HDMI
+    @Published var hdmiReachable:   Bool = false
+    @Published var uptimeSeconds:   Int?  = nil
 
     // MARK: – Connectivity
     @Published var lastPollAt: Date = Date()
@@ -88,19 +171,39 @@ final class DataViewModel: ObservableObject {
     @Published var astro:        AstroData?
     @Published var astroError:   String?
 
-    // MARK: – System health (polled from Pi /status every 5s)
-    @Published var healthPiReachable:     Bool    = false
-    @Published var healthBridgeReachable: Bool    = false
-    @Published var healthBleConnected:    Bool    = false
-    @Published var healthYoloRunning:     Bool    = false
-    @Published var healthYoloSimMode:     Bool    = true
-    @Published var healthIsRecording:     Bool    = false
-    @Published var healthEsp32BleState:   String  = "—"
-    @Published var healthSsdMounted:            Bool    = false
-    @Published var healthSsdFreePct:            Double  = 0
-    @Published var healthDetectLastAgoSec:      Double? = nil
-    @Published var healthLastPollAt:            Date?   = nil
-    @Published var healthLastError:             String? = nil
+    // MARK: – System health (polled from Pi /status every 2s)
+    @Published var healthPiReachable:          Bool    = false
+    @Published var healthYoloRunning:          Bool    = false
+    @Published var healthYoloSimMode:          Bool    = true
+    @Published var healthIsRecording:          Bool    = false
+    @Published var healthSsdMounted:           Bool    = false
+    @Published var healthSsdFreePct:           Double  = 0
+    @Published var piSdUsedPct:               Double? = nil
+    @Published var healthDetectLastAgoSec:     Double? = nil
+    @Published var healthLastPollAt:           Date?   = nil
+    @Published var healthLastError:            String? = nil
+
+    // MARK: – Camera (BMPCC via ethernet REST API)
+    @Published var camReachable:            Bool    = false
+    @Published var camRecording:            Bool    = false
+    @Published var camCodec:                String  = "—"
+    @Published var camFrameRate:            String  = "—"
+    @Published var camResolution:           String  = "—"
+    @Published var camIso:                  Int?    = nil
+    @Published var camWhiteBalance:         Int?    = nil
+    @Published var camGain:                 Int?    = nil
+    @Published var camActiveMediaSlot:      String  = "—"
+    @Published var camRemainingRecordTime:  Int?    = nil
+    @Published var camShutterAngle:              Double? = nil
+    @Published var camLens:                      String? = nil
+    @Published var camCodecVariant:              String? = nil
+    @Published var camFormatDetails:             String? = nil
+    @Published var camMediaVolume:               String? = nil
+    @Published var camMediaClipCount:            Int?    = nil
+    @Published var camMediaSpaceRemainingGb:     Double? = nil
+
+    // MARK: – External drives (from Pi /status)
+    @Published var externalDrives: [ExternalDrive] = []
 
     // MARK: – Deployment
     @Published var deploymentChangeCount: Int = 0
@@ -113,17 +216,14 @@ final class DataViewModel: ObservableObject {
     }
 
     // MARK: – Private
-    private var simTask:          Task<Void, Never>?
-    private var trigTask:         Task<Void, Never>?
-    private var healthTask:       Task<Void, Never>?
-    private var logTask:          Task<Void, Never>?
-    private var notificationTask: Task<Void, Never>?
+    private var simTask:                Task<Void, Never>?
+    private var trigTask:               Task<Void, Never>?
+    private var healthTask:             Task<Void, Never>?
+    private var logTask:                Task<Void, Never>?
+    private var notificationTask:       Task<Void, Never>?
+    private var finalizingTimer:        Task<Void, Never>?
+    private var detectionHistoryTask:   Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
-
-    // Cold-start guard: don't let a stale Pi "recording: true" make the button
-    // orange on first launch. isRecording can only go true via the poll after
-    // we've first received at least one "not recording" response.
-    private var seenNotRecording = false
 
     private let detectionClasses = ["deer", "fox", "raccoon", "coyote",
                                     "bird", "squirrel", "cat", "person"]
@@ -167,6 +267,8 @@ final class DataViewModel: ObservableObject {
         healthTask?.cancel()
         logTask?.cancel()
         notificationTask?.cancel()
+        finalizingTimer?.cancel()
+        detectionHistoryTask?.cancel()
     }
 
     func suspend() {
@@ -230,30 +332,111 @@ final class DataViewModel: ObservableObject {
             let box:        [Double]   // [x, y, w, h] normalized 0–1
         }
 
-        let esp32Connected:       Bool?
-        let esp32BridgeReachable: Bool?
-        let esp32BleState:        String?
-        let yoloRunning:          Bool?
-        let yoloSimMode:          Bool?
-        let ssdMounted:                    Bool?
-        let ssdFreePct:                    Double?
-        let detectorLastInferenceAgoSec:   Double?
-        let recording:                     Bool?
-        let machineState:         String?
-        let detections:           [DetectionItem]?
+        struct StorageInfo: Decodable {
+            let freeGb:           Double?
+            let totalGb:          Double?
+            let usedPct:          Double?
+            let daysRemaining:    Double?
+            let burnRateGbPerDay: Double?
+            let snapshots:        [StorageSnapshot]?
+            enum CodingKeys: String, CodingKey {
+                case freeGb           = "free_gb"
+                case totalGb          = "total_gb"
+                case usedPct          = "used_pct"
+                case daysRemaining    = "days_remaining"
+                case burnRateGbPerDay = "burn_rate_gb_per_day"
+                case snapshots
+            }
+        }
+
+        let yoloRunning:                 Bool?
+        let yoloSimMode:                 Bool?
+        let ssdMounted:                  Bool?
+        let ssdFreePct:                  Double?
+        let piSdUsedPct:                 Double?
+        let detectorLastInferenceAgoSec: Double?
+        let detectorThreshold:           Double?
+        let detectorFpsActual:           Double?
+        let recording:                   Bool?
+        let machineState:                String?
+        let detections:                  [DetectionItem]?
+        let storage:                     StorageInfo?
+
+        let hdmiReachable:           Bool?
+        let uptimeS:                 Int?
+
+        let temperatureC:            Double?
+        let humidityPct:             Double?
+        let dewPointC:               Double?
+        let pressureHpa:             Double?
+        let luxValue:                Double?
+        let evValue:                 Double?
+        let cpuTempC:                Double?
+        let timecode:                String?
+
+        let dawnDuskEnabled:         Bool?
+
+        let camReachable:            Bool?
+        let camRecording:            Bool?
+        let camCodec:                String?
+        let camFrameRate:            String?
+        let camResolution:           String?
+        let camIso:                  Int?
+        let camWhiteBalance:         Int?
+        let camGain:                 Int?
+        let camActiveMediaSlot:      String?
+        let camRemainingRecordTime:  Int?
+        let camShutterAngle:             Double?
+        let camLens:                     String?
+        let camCodecVariant:             String?
+        let camFormatDetails:            String?
+        let camMediaVolume:              String?
+        let camMediaClipCount:           Int?
+        let camMediaSpaceRemainingGb:    Double?
+        let externalDrives:              [ExternalDrive]?
 
         enum CodingKeys: String, CodingKey {
-            case esp32Connected       = "esp32_connected"
-            case esp32BridgeReachable = "esp32_bridge_reachable"
-            case esp32BleState        = "esp32_ble_state"
-            case yoloRunning          = "yolo_running"
-            case yoloSimMode          = "yolo_sim_mode"
+            case yoloRunning                 = "yolo_running"
+            case yoloSimMode                 = "yolo_sim_mode"
             case ssdMounted                  = "ssd_mounted"
             case ssdFreePct                  = "ssd_free_pct"
+            case piSdUsedPct                 = "pi_sd_used_pct"
             case detectorLastInferenceAgoSec = "detector_last_inference_ago_seconds"
+            case detectorThreshold           = "detector_threshold"
+            case detectorFpsActual           = "detector_fps_actual"
             case recording
-            case machineState         = "machine_state"
+            case machineState                = "machine_state"
             case detections
+            case storage
+            case hdmiReachable               = "hdmi_reachable"
+            case uptimeS                     = "uptime_s"
+            case temperatureC                = "temperature_c"
+            case humidityPct                 = "humidity_pct"
+            case dewPointC                   = "dew_point_c"
+            case pressureHpa                 = "pressure_hpa"
+            case luxValue                    = "lux"
+            case evValue                     = "ev"
+            case cpuTempC                    = "cpu_temp_c"
+            case timecode
+            case dawnDuskEnabled             = "dawn_dusk_enabled"
+            case camReachable                = "cam_reachable"
+            case camRecording                = "cam_recording"
+            case camCodec                    = "cam_codec"
+            case camFrameRate                = "cam_frame_rate"
+            case camResolution               = "cam_resolution"
+            case camIso                      = "cam_iso"
+            case camWhiteBalance             = "cam_white_balance"
+            case camGain                     = "cam_gain"
+            case camActiveMediaSlot          = "cam_active_media_slot"
+            case camRemainingRecordTime      = "cam_remaining_record_time"
+            case camShutterAngle             = "cam_shutter_angle"
+            case camLens                     = "cam_lens"
+            case camCodecVariant             = "cam_codec_variant"
+            case camFormatDetails            = "cam_format_details"
+            case camMediaVolume              = "cam_media_volume"
+            case camMediaClipCount           = "cam_media_clip_count"
+            case camMediaSpaceRemainingGb    = "cam_media_space_remaining_gb"
+            case externalDrives              = "external_drives"
         }
     }
 
@@ -261,7 +444,50 @@ final class DataViewModel: ObservableObject {
         await pollHealth()
     }
 
+    // MARK: – Detector threshold
+
+    func setDetectorThreshold(_ value: Double) async {
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty, let url = URL(string: base + "/detector/threshold") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["value": value])
+        req.timeoutInterval = 5
+        _ = try? await URLSession.shared.data(for: req)
+        // On failure the next /status poll resets detectorThreshold to server's actual value
+    }
+
+    // MARK: – Detection history polling (active only when LOG sub-page visible)
+
+    func startDetectionHistoryPolling() {
+        detectionHistoryTask?.cancel()
+        detectionHistoryTask = Task {
+            while !Task.isCancelled {
+                await fetchDetectionHistory()
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+        }
+    }
+
+    func stopDetectionHistoryPolling() {
+        detectionHistoryTask?.cancel()
+        detectionHistoryTask = nil
+    }
+
+    private func fetchDetectionHistory() async {
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty, let url = URL(string: base + "/detections/recent") else { return }
+        struct Response: Decodable { let detections: [DetectionHistoryItem] }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let response  = try JSONDecoder().decode(Response.self, from: data)
+            detectionHistory = response.detections
+        } catch { }
+    }
+
     private func startHealthPolling() {
+        healthTask?.cancel()
         healthTask = Task {
             while !Task.isCancelled {
                 await pollHealth()
@@ -283,31 +509,87 @@ final class DataViewModel: ObservableObject {
             let (data, _) = try await URLSession.shared.data(for: req)
             UserDefaults.standard.set(data, forKey: "lastKnownStatus")
             let poll = try JSONDecoder().decode(HealthPoll.self, from: data)
-            healthPiReachable     = true
-            healthBridgeReachable = poll.esp32BridgeReachable ?? false
-            let wasConnected      = healthBleConnected
-            healthBleConnected    = poll.esp32Connected       ?? false
-            healthEsp32BleState   = poll.esp32BleState        ?? "—"
-            healthYoloRunning     = poll.yoloRunning          ?? false
-            healthYoloSimMode     = poll.yoloSimMode          ?? true
-            healthIsRecording     = poll.recording            ?? false
-            let bleUp             = poll.esp32Connected       ?? false
-            // Re-arm the cold-start guard on every BLE reconnect so a stale
-            // recording:true from the Pi can't immediately light the button.
-            if bleUp && !wasConnected { seenNotRecording = false }
-            let piRecording       = (poll.recording ?? false) && bleUp
-            if !piRecording { seenNotRecording = true }
-            isRecording           = seenNotRecording ? piRecording : false
-            healthSsdMounted         = poll.ssdMounted                  ?? false
-            healthSsdFreePct         = poll.ssdFreePct                  ?? 0
+            healthPiReachable        = true
+            healthYoloRunning        = poll.yoloRunning          ?? false
+            healthYoloSimMode        = poll.yoloSimMode          ?? true
+            if let t = poll.detectorThreshold { detectorThreshold = t }
+            detectorFpsActual        = poll.detectorFpsActual
+            healthIsRecording        = poll.recording            ?? false
+            healthSsdMounted         = poll.ssdMounted           ?? false
+            healthSsdFreePct         = poll.ssdFreePct           ?? 0
+            piSdUsedPct              = poll.piSdUsedPct
             healthDetectLastAgoSec   = poll.detectorLastInferenceAgoSec
             healthLastPollAt         = Date()
-            healthLastError       = nil
+            healthLastError          = nil
+
+            hdmiReachable = poll.hdmiReachable ?? false
+            if let u = poll.uptimeS { uptimeSeconds = u }
+
+            // Sensor data — None from Pi serializes as null → nil here
+            enclosureTempC    = poll.temperatureC
+            enclosureHumidity = poll.humidityPct
+            pressure          = poll.pressureHpa
+            lux               = poll.luxValue
+            ev                = poll.evValue
+            if let c = poll.cpuTempC { cpuTemp = c }
+            camTimecode       = poll.timecode
+
+            // Camera (ethernet REST API)
+            camReachable           = poll.camReachable        ?? false
+            camRecording           = poll.camRecording        ?? false
+            camCodec               = poll.camCodec            ?? "—"
+            camFrameRate           = poll.camFrameRate        ?? "—"
+            camResolution          = poll.camResolution       ?? "—"
+            camIso                 = poll.camIso
+            camWhiteBalance        = poll.camWhiteBalance
+            camGain                = poll.camGain
+            camActiveMediaSlot     = poll.camActiveMediaSlot  ?? "—"
+            camRemainingRecordTime = poll.camRemainingRecordTime
+            camShutterAngle              = poll.camShutterAngle
+            camLens                      = poll.camLens
+            camCodecVariant              = poll.camCodecVariant
+            camFormatDetails             = poll.camFormatDetails
+            camMediaVolume               = poll.camMediaVolume
+            camMediaClipCount            = poll.camMediaClipCount
+            camMediaSpaceRemainingGb     = poll.camMediaSpaceRemainingGb
+            if let drives = poll.externalDrives { externalDrives = drives }
+
+            // SSD storage_monitor
+            if let s = poll.storage {
+                storageFreeGb           = s.freeGb
+                storageTotalGb          = s.totalGb
+                storageUsedPct          = s.usedPct
+                storageDaysRemaining    = s.daysRemaining
+                storageBurnRateGbPerDay = s.burnRateGbPerDay
+                storageSnapshots        = s.snapshots ?? []
+            }
+
+            // Tri-state recording state resolution
+            switch recordingState {
+            case .finalizing:
+                let piStopped = !(poll.camRecording ?? false)
+                let machineIdle = (poll.machineState ?? "IDLE") == "IDLE"
+                if piStopped && machineIdle {
+                    recordingState = .idle
+                    finalizingTimer?.cancel()
+                    finalizingTimer = nil
+                }
+            case .idle:
+                if poll.camRecording ?? false { recordingState = .recording }
+            case .recording:
+                break
+            }
+            isRecording = (recordingState == .recording)
+
+            // Dawn/dusk — Pi is source of truth; overwrite local UserDefaults on every poll
+            if let dd = poll.dawnDuskEnabled {
+                AppSettings.shared.dawnDuskWindows = dd
+            }
 
             // Machine state & YOLO lock
             let ms = poll.machineState ?? "IDLE"
             machineState = ms
-            yoloLocked   = (ms == "ACTIVE") && (poll.recording ?? false)
+            yoloLocked   = (ms == "ACTIVE") && camRecording
 
             // Real detections from Pi
             if let items = poll.detections {
@@ -332,6 +614,7 @@ final class DataViewModel: ObservableObject {
     // MARK: – Notification polling (every 2s, parallel to health)
 
     private func startNotificationPolling() {
+        notificationTask?.cancel()
         notificationTask = Task {
             while !Task.isCancelled {
                 await NotificationPoller.shared.pollAndSurface()
@@ -343,6 +626,7 @@ final class DataViewModel: ObservableObject {
     // MARK: – Event log + agent log polling (every 3s)
 
     private func startLogPolling() {
+        logTask?.cancel()
         logTask = Task {
             while !Task.isCancelled {
                 await pollEventLog()
@@ -438,23 +722,8 @@ final class DataViewModel: ObservableObject {
 
     private func tick() {
         lastPollAt = Date()
-        lux  += Double.random(in: -40...40)
-        lux   = max(80, min(8000, lux))
-        ev    = lux > 0 ? log2(lux / 2.5) : 0.0
-        ev    = (ev * 10).rounded() / 10
-
         if isRecording { recordingSeconds += 2 }
         ssdRemainingGB -= isRecording ? 0.0014 : 0
-
-        enclosureTempC    += Double.random(in: -0.15...0.15)
-        enclosureTempC     = (enclosureTempC * 10).rounded() / 10
-        enclosureHumidity += Double.random(in: -0.4...0.4)
-        enclosureHumidity  = max(20, min(99, (enclosureHumidity * 10).rounded() / 10))
-
-        cpuTemp  += Double.random(in: -0.3...0.3)
-        cpuTemp   = max(40, min(85, (cpuTemp * 10).rounded() / 10))
-        pressure += Double.random(in: -0.1...0.1)
-        pressure  = (pressure * 10).rounded() / 10
 
         driveUsedPercent  += 0.002
         driveUsedPercent   = min(100, driveUsedPercent)
@@ -521,7 +790,7 @@ final class DataViewModel: ObservableObject {
 
     var triggerStateColor: Color {
         switch triggerState {
-        case .active:    return Theme.accent
+        case .active:    return Theme.ok
         case .holding:   return .white
         case .countdown: return Color(red: 0.541, green: 0.541, blue: 0.522) // #8A8A85
         }
@@ -537,30 +806,60 @@ final class DataViewModel: ObservableObject {
     }
 
     var hasSystemAlert: Bool {
-        !healthPiReachable || !healthBridgeReachable || healthEsp32BleState != "Connected"
+        !healthPiReachable || !camReachable
     }
 
     // MARK: – Pi commands
 
-    // BMPCC record via ESP32 bridge
+    // BMPCC record via Pi → ethernet → camera REST API
     func toggleBmpccRecord() async {
-        print("[REC] toggleBmpccRecord — isRecording=\(isRecording), bleConnected=\(healthBleConnected), bleState=\(healthEsp32BleState)")
-        if isRecording {
-            print("[REC] → STOP")
-            await sendPiCommand("/control/record/stop")
-            isRecording = false
-        } else {
-            print("[REC] → START")
-            await sendPiCommand("/control/record/start")
-            isRecording = true
+        switch recordingState {
+        case .recording:
+            await sendPiCommandPUT("/camera/record/stop")
+            recordingState = .finalizing
+            finalizingTimer?.cancel()
+            finalizingTimer = Task {
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                if recordingState == .finalizing {
+                    recordingState = .idle
+                    print("[HHRCS] FINALIZING safety timer expired — forced idle")
+                }
+            }
+        case .idle:
+            await sendPiCommandPUT("/camera/record/start")
+            recordingState = .recording
             await captureAndStoreSnapshot(triggerType: "manual")
+        case .finalizing:
+            break  // non-interactive during finalization
         }
-        print("[REC] done — isRecording now \(isRecording)")
+        await pollHealth()
     }
 
     // Pi Camera Module 3 record — visual-only toggle, no Pi endpoint yet
     func togglePiCamRecord() {
         isPiCamRecording.toggle()
+    }
+
+    func captureHdmiStill() async {
+        guard !isCapturingStill else { return }
+        isCapturingStill = true
+        defer { isCapturingStill = false }
+        let piBase = AppSettings.shared.piServerURL
+        guard !piBase.isEmpty, let triggerURL = URL(string: piBase + "/hdmi/still") else { return }
+        var req = URLRequest(url: triggerURL)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 5
+        _ = try? await URLSession.shared.data(for: req)
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        if let url = URL(string: piBase + "/hdmi/stills/latest"),
+           let (data, resp) = try? await URLSession.shared.data(from: url),
+           let http = resp as? HTTPURLResponse,
+           http.statusCode == 200,
+           !data.isEmpty {
+            lastStillData       = data
+            lastStillCapturedAt = Date()
+            stills.insert(CapturedStill(piCamImageData: data, triggerType: "hdmi"), at: 0)
+        }
     }
 
     // BMPCC still via ESP32 bridge
@@ -581,7 +880,7 @@ final class DataViewModel: ObservableObject {
         }
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         if !piBase.isEmpty {
-            for path in ["/stills/latest", "/snapshot"] {
+            for path in ["/stills/latest"] {
                 guard let url = URL(string: piBase + path) else { continue }
                 if let (data, resp) = try? await URLSession.shared.data(from: url),
                    let http = resp as? HTTPURLResponse,
@@ -614,17 +913,28 @@ final class DataViewModel: ObservableObject {
     }
 
     private func captureAndStoreSnapshot(triggerType: String) async {
-        let base = AppSettings.shared.streamBaseURL
-        if !base.isEmpty,
-           let url = URL(string: base + "/snapshot"),
-           let (data, _) = try? await URLSession.shared.data(from: url),
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty else {
+            stills.insert(CapturedStill(triggerType: triggerType), at: 0)
+            lastStillCapturedAt = Date()
+            return
+        }
+        if let url = URL(string: base + "/still/trigger") {
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.timeoutInterval = 5
+            _ = try? await URLSession.shared.data(for: req)
+        }
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        if let url = URL(string: base + "/stills/latest"),
+           let (data, resp) = try? await URLSession.shared.data(from: url),
+           let http = resp as? HTTPURLResponse, http.statusCode == 200,
            !data.isEmpty {
             lastStillData       = data
             lastStillCapturedAt = Date()
             stills.insert(CapturedStill(piCamImageData: data, triggerType: triggerType), at: 0)
         } else {
-            let still = CapturedStill(triggerType: triggerType)
-            stills.insert(still, at: 0)
+            stills.insert(CapturedStill(triggerType: triggerType), at: 0)
             lastStillCapturedAt = Date()
             lastStillData       = nil
         }
@@ -646,6 +956,15 @@ final class DataViewModel: ObservableObject {
         } else {
             print("[Pi] POST \(path) — network error / timeout")
         }
+    }
+
+    private func sendPiCommandPUT(_ path: String) async {
+        let base = AppSettings.shared.piServerURL
+        guard !base.isEmpty, let url = URL(string: base + path) else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        req.timeoutInterval = 5
+        _ = try? await URLSession.shared.data(for: req)
     }
 
     private func sendPiCommandJSON(_ path: String, body: [String: Any]) async {

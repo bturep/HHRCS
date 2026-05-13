@@ -3,7 +3,7 @@ import SwiftUI
 struct LaunchView: View {
     let onAdvance: (Int) -> Void
 
-    private enum Phase { case p1, p2, p3, failed(String) }
+    private enum Phase { case p1, failed(String) }
 
     @State private var phase:        Phase              = .p1
     @State private var dotCount:     Int                = 0
@@ -11,7 +11,11 @@ struct LaunchView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Image("LaunchBackground")
+                .resizable()
+                .scaledToFill()
+                .ignoresSafeArea()
+                .overlay(Color.black.opacity(0.45))
 
             VStack(alignment: .leading, spacing: -6) {
                 letterRow(letter: "H", word: "UNTER")
@@ -63,7 +67,7 @@ struct LaunchView: View {
             Text("NO SIGNAL")
                 .font(.system(size: 9, weight: .regular, design: .monospaced))
                 .tracking(2.0)
-                .foregroundStyle(Theme.accentOrange)
+                .foregroundStyle(Theme.text1)
 
             if !msg.isEmpty {
                 Text(msg)
@@ -77,7 +81,7 @@ struct LaunchView: View {
                 Text("CONTINUE OFFLINE")
                     .font(.system(size: 10, weight: .regular, design: .monospaced))
                     .tracking(1.5)
-                    .foregroundStyle(Theme.accentOrange)
+                    .foregroundStyle(Theme.text1)
             }
             .buttonStyle(.plain)
             .padding(.top, 4)
@@ -105,11 +109,11 @@ struct LaunchView: View {
     }
 
     @ViewBuilder
-    private func letterRow(letter: String, word: String) -> some View {
+    private func letterRow(letter: String, word: String, letterColor: Color = Theme.text1) -> some View {
         HStack(alignment: .lastTextBaseline, spacing: 4) {
             Text(letter)
                 .font(.system(size: 36, weight: .heavy, design: .default))
-                .foregroundStyle(Theme.accentOrange.opacity(0.82))
+                .foregroundStyle(letterColor.opacity(0.82))
             Text(word)
                 .font(.system(size: 10, weight: .regular, design: .monospaced))
                 .tracking(4.0)
@@ -120,8 +124,6 @@ struct LaunchView: View {
     private var phaseLabel: String {
         switch phase {
         case .p1:     return "INITIALIZING"
-        case .p2:     return "ESTABLISHING LINK"
-        case .p3:     return "CONNECTING TO FIELD"
         case .failed: return ""
         }
     }
@@ -138,27 +140,9 @@ struct LaunchView: View {
     private func runPreflight() async {
         phase = .p1
         startEllipsis()
-
-        // Phase 1: INITIALIZING — /status (advance when done, min 2s display)
-        let t1 = Date()
-        let (ok, errMsg) = await pingStatus()
-        let remain = 2.0 - Date().timeIntervalSince(t1)
-        if remain > 0 { try? await Task.sleep(nanoseconds: UInt64(remain * 1_000_000_000)) }
-
-        guard ok else {
-            stopEllipsis()
-            phase = .failed(errMsg)
-            return
-        }
-
-        // Phase 2: ESTABLISHING LINK — 3s
-        phase = .p2
-        try? await Task.sleep(nanoseconds: 3_000_000_000)
-
-        // Phase 3: CONNECTING TO FIELD — 4s
-        phase = .p3
-        try? await Task.sleep(nanoseconds: 4_000_000_000)
-
+        // Purely cosmetic — 2.5s display, then ContentView fades it out over 0.5s.
+        // Connectivity is reflected in the DATA tab health dots once the app is open.
+        try? await Task.sleep(nanoseconds: 2_500_000_000)
         stopEllipsis()
         onAdvance(0)
     }
@@ -181,31 +165,4 @@ struct LaunchView: View {
         dotCount = 0
     }
 
-    private func pingStatus() async -> (Bool, String) {
-        let base = AppSettings.shared.piServerURL
-        guard !base.isEmpty, let url = URL(string: base + "/status") else {
-            return (false, "No URL configured — open Settings")
-        }
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 8
-        do {
-            let (data, _) = try await URLSession.shared.data(for: req)
-            UserDefaults.standard.set(data, forKey: "lastKnownStatus")
-            return (true, "")
-        } catch {
-            return (false, buildOfflineSummary())
-        }
-    }
-
-    private func buildOfflineSummary() -> String {
-        if let cached = UserDefaults.standard.data(forKey: "lastKnownStatus"),
-           let json = try? JSONSerialization.jsonObject(with: cached) as? [String: Any] {
-            var parts: [String] = []
-            if let sim = json["yolo_sim_mode"]   as? Bool   { parts.append(sim ? "sim" : "live") }
-            if let ble = json["esp32_ble_state"] as? String { parts.append("BLE \(ble.lowercased())") }
-            parts.append("check power and network")
-            return parts.joined(separator: " · ")
-        }
-        return "Pi unreachable · check power and network"
-    }
 }
